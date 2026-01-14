@@ -6,7 +6,7 @@
   "scripts": {
     "build": "npm run build:frontend && npm run copy:static",
     "build:frontend": "cd src/frontend && npm install && npm run build",
-    "copy:static": "rm -rf static && mkdir -p static && cp -r src/frontend/build/* static/",
+    "copy:static": "rm -rf static && mkdir -p static && cp -r src/frontend/build/* static/ && ls -la static/",
     "deploy": "npm run build && forge deploy",
     "install": "forge install",
     "tunnel": "forge tunnel"
