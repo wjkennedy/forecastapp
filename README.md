@@ -20,37 +20,37 @@ A Forge app that provides Monte Carlo simulation-based forecasting for Jira proj
 
 ### 1. Install dependencies
 
-```bash
+\`\`\`bash
 npm install
-```
+\`\`\`
 
 ### 2. Build the frontend
 
-```bash
+\`\`\`bash
 cd src/frontend
 npm install
 npm run build
 cd ../..
-```
+\`\`\`
 
 ### 3. Copy static resources
 
-```bash
+\`\`\`bash
 npm run copy:static
-```
+\`\`\`
 
 ### 4. Deploy to Forge
 
-```bash
+\`\`\`bash
 forge login
 forge deploy
-```
+\`\`\`
 
 ### 5. Install on a Jira site
 
-```bash
+\`\`\`bash
 forge install
-```
+\`\`\`
 
 Select your Jira site when prompted.
 
@@ -58,16 +58,16 @@ Select your Jira site when prompted.
 
 ### Build and deploy
 
-```bash
+\`\`\`bash
 npm run build
 npm run deploy
-```
+\`\`\`
 
 ### Local development with tunnel
 
-```bash
+\`\`\`bash
 forge tunnel
-```
+\`\`\`
 
 This allows you to test changes without deploying.
 
@@ -81,12 +81,12 @@ The frontend is in `src/frontend` and uses:
 
 To rebuild the frontend:
 
-```bash
+\`\`\`bash
 cd src/frontend
 npm run build
 cd ../..
 npm run copy:static
-```
+\`\`\`
 
 ## Architecture
 
@@ -134,14 +134,14 @@ External fetch:
 If DuckDB fails to install, ensure you have the proper build tools:
 
 **macOS:**
-```bash
+\`\`\`bash
 xcode-select --install
-```
+\`\`\`
 
 **Linux:**
-```bash
+\`\`\`bash
 sudo apt-get install build-essential
-```
+\`\`\`
 
 **Windows:**
 Install Visual Studio Build Tools
@@ -155,9 +155,9 @@ Install Visual Studio Build Tools
 ### Resolver errors
 
 Check logs with:
-```bash
+\`\`\`bash
 forge logs
-```
+\`\`\`
 
 Look for `[v0]` prefixed debug logs.
 
