@@ -12,7 +12,7 @@ function:
 
 resources:
   - key: main
-    path: static/build
+    path: static
 
 permissions:
   scopes:
@@ -22,6 +22,12 @@ permissions:
     fetch:
       backend:
         - address: "*.atlassian.net"
+  content:
+    styles:
+      - 'unsafe-inline'
+    scripts:
+      - 'unsafe-inline'
+      - 'unsafe-eval'
 
 app:
   runtime:

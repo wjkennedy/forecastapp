@@ -6,7 +6,10 @@ module.exports = {
   output: {
     path: path.resolve(__dirname, "build"),
     filename: "bundle.js",
+    publicPath: "/",
   },
+  mode: "development",
+  devtool: "source-map",
   module: {
     rules: [
       {
@@ -28,9 +31,11 @@ module.exports = {
   plugins: [
     new HtmlWebpackPlugin({
       template: "./public/index.html",
+      inject: "body",
     }),
   ],
   resolve: {
     extensions: [".js", ".jsx"],
   },
+  stats: "verbose",
 }
