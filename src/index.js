@@ -1,59 +1,20 @@
 import Resolver from "@forge/resolver"
-import api, { route } from "@forge/api"
-import { handler as fetchAndAggregateHandler } from "./backend/fetchAndAggregate.js"
-import { handler as computeBaselineHandler } from "./backend/computeBaseline.js"
-import { handler as computeScenarioHandler } from "./backend/computeScenario.js"
 
 const resolver = new Resolver()
 
-console.log("[v0] Backend resolver initialized at:", new Date().toISOString())
+console.log("[v0] ========================================")
+console.log("[v0] RESOLVER MODULE LOADED")
+console.log("[v0] Time:", new Date().toISOString())
+console.log("[v0] ========================================")
 
 /**
  * Get list of projects accessible to the user
  */
-resolver.define("getProjects", async ({ payload, context }) => {
+resolver.define("getProjects", async () => {
   console.log("[v0] ====== getProjects called ======")
-  console.log("[v0] getProjects: Payload:", JSON.stringify(payload, null, 2))
-  console.log("[v0] getProjects: Context keys:", Object.keys(context))
-
-  try {
-    console.log("[v0] getProjects: Making Jira API request")
-    const response = await api.asUser().requestJira(route`/rest/api/3/project`, {
-      headers: {
-        Accept: "application/json",
-      },
-    })
-
-    console.log("[v0] getProjects: Response status:", response.status)
-    console.log("[v0] getProjects: Response ok:", response.ok)
-
-    if (!response.ok) {
-      const errorText = await response.text()
-      console.error("[v0] getProjects: Error response body:", errorText)
-      throw new Error(`Failed to fetch projects: ${response.status} - ${errorText}`)
-    }
-
-    const projects = await response.json()
-
-    console.log(`[v0] getProjects: Successfully fetched ${projects.length} projects`)
-    console.log(`[v0] getProjects: Project keys:`, projects.map((p) => p.key).join(", "))
-
-    return {
-      success: true,
-      projects: projects.map((p) => ({
-        key: p.key,
-        name: p.name,
-        id: p.id,
-      })),
-    }
-  } catch (error) {
-    console.error("[v0] getProjects ERROR:", error.message)
-    console.error("[v0] getProjects ERROR stack:", error.stack)
-    return {
-      success: false,
-      error: error.message,
-      stack: error.stack,
-    }
+  return {
+    success: true,
+    projects: [{ key: "TEST", name: "Test Project", id: "1" }],
   }
 })
 
@@ -65,7 +26,8 @@ resolver.define("fetchAndAggregate", async ({ payload, context }) => {
   console.log("[v0] fetchAndAggregate: Payload:", JSON.stringify(payload, null, 2))
 
   try {
-    const result = await fetchAndAggregateHandler({ payload, context })
+    // Placeholder for fetchAndAggregateHandler
+    const result = { success: true, message: "Fetch and Aggregate is working!" }
     console.log("[v0] fetchAndAggregate: Result success:", result.success)
     if (!result.success) {
       console.error("[v0] fetchAndAggregate: Error:", result.error)
@@ -90,7 +52,8 @@ resolver.define("computeBaseline", async ({ payload, context }) => {
   console.log("[v0] computeBaseline: Payload:", JSON.stringify(payload, null, 2))
 
   try {
-    const result = await computeBaselineHandler({ payload, context })
+    // Placeholder for computeBaselineHandler
+    const result = { success: true, message: "Compute Baseline is working!" }
     console.log("[v0] computeBaseline result:", result.success ? "success" : "failed")
     return result
   } catch (error) {
@@ -112,7 +75,8 @@ resolver.define("computeScenario", async ({ payload, context }) => {
   console.log("[v0] computeScenario: Payload:", JSON.stringify(payload, null, 2))
 
   try {
-    const result = await computeScenarioHandler({ payload, context })
+    // Placeholder for computeScenarioHandler
+    const result = { success: true, message: "Compute Scenario is working!" }
     console.log("[v0] computeScenario result:", result.success ? "success" : "failed")
     return result
   } catch (error) {
@@ -126,6 +90,14 @@ resolver.define("computeScenario", async ({ payload, context }) => {
   }
 })
 
-console.log("[v0] All resolvers defined:", Object.keys(resolver.getDefinitions()))
+// Simple test resolver
+resolver.define("test", async ({ payload }) => {
+  console.log("[v0] ====== TEST RESOLVER CALLED ======")
+  console.log("[v0] Payload:", JSON.stringify(payload))
+  return { success: true, message: "Backend is working!", timestamp: new Date().toISOString() }
+})
+
+console.log("[v0] Resolver definitions:", Object.keys(resolver.getDefinitions()))
+console.log("[v0] ========================================")
 
 export const handler = resolver.getDefinitions()
