@@ -1,6 +1,16 @@
 import Resolver from "@forge/resolver"
 
+console.log("[v0] ==========================================")
+console.log("[v0] ===== RESOLVER MODULE LOADING =====")
+console.log("[v0] Time:", new Date().toISOString())
+console.log("[v0] Node version:", process.version)
+console.log("[v0] ==========================================")
+
 const resolver = new Resolver()
+
+console.log("[v0] Resolver instance created:", typeof resolver)
+console.log("[v0] Resolver has define method:", typeof resolver.define === "function")
+console.log("[v0] Resolver has getDefinitions:", typeof resolver.getDefinitions === "function")
 
 console.log("[v0] ========================================")
 console.log("[v0] RESOLVER MODULE LOADED")
@@ -92,12 +102,32 @@ resolver.define("computeScenario", async ({ payload, context }) => {
 
 // Simple test resolver
 resolver.define("test", async ({ payload }) => {
-  console.log("[v0] ====== TEST RESOLVER CALLED ======")
-  console.log("[v0] Payload:", JSON.stringify(payload))
-  return { success: true, message: "Backend is working!", timestamp: new Date().toISOString() }
+  console.log("[v0] ==========================================")
+  console.log("[v0] ===== TEST RESOLVER CALLED!!! =====")
+  console.log("[v0] Time:", new Date().toISOString())
+  console.log("[v0] Payload:", JSON.stringify(payload, null, 2))
+  console.log("[v0] ==========================================")
+
+  const result = {
+    success: true,
+    message: "Backend is ALIVE and WORKING!",
+    timestamp: new Date().toISOString(),
+    payload: payload,
+  }
+
+  console.log("[v0] Returning result:", JSON.stringify(result))
+  return result
 })
 
-console.log("[v0] Resolver definitions:", Object.keys(resolver.getDefinitions()))
-console.log("[v0] ========================================")
+console.log("[v0] All resolvers defined")
+console.log("[v0] Calling getDefinitions()...")
 
-export const handler = resolver.getDefinitions()
+const definitions = resolver.getDefinitions()
+
+console.log("[v0] getDefinitions() returned:", typeof definitions)
+console.log("[v0] Exporting handler...")
+console.log("[v0] ==========================================")
+console.log("[v0] ===== MODULE EXPORT COMPLETE =====")
+console.log("[v0] ==========================================")
+
+export const handler = definitions
