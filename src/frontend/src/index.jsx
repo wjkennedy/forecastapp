@@ -1,13 +1,71 @@
-"use client"
+'use client';
 
 import { useState, useEffect } from "react"
 import ReactDOM from "react-dom/client"
-import { invoke, view } from "@forge/bridge"
 import "./styles.css"
 
-console.log("[v0] Frontend script loaded at:", new Date().toISOString())
-console.log("[v0] Window location:", window.location.href)
-console.log("[v0] Document ready state:", document.readyState)
+// ========== IMMEDIATE INITIALIZATION ==========
+console.log("[v0] ========== SCRIPT START ==========")
+console.log("[v0] Time:", new Date().toISOString())
+
+// Render something visible IMMEDIATELY before any async operations
+const showImmediateContent = () => {
+  console.log("[v0] showImmediateContent called")
+  const root = document.getElementById("root")
+  console.log("[v0] root element:", root)
+  if (root) {
+    root.innerHTML = `
+      <div style="padding: 24px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+        <div style="background: #0052CC; color: white; padding: 16px 24px; border-radius: 8px; margin-bottom: 16px;">
+          <h1 style="margin: 0; font-size: 24px;">Project Forecast</h1>
+          <p style="margin: 8px 0 0 0; opacity: 0.9;">Loading application...</p>
+        </div>
+        <div id="app-status" style="padding: 16px; background: #f4f5f7; border-radius: 4px;">
+          <p style="margin: 0;">Initializing React...</p>
+        </div>
+      </div>
+    `
+    console.log("[v0] Immediate content rendered")
+  } else {
+    console.error("[v0] Root element not found!")
+  }
+}
+
+// Show content immediately
+console.log("[v0] Document readyState:", document.readyState)
+if (document.readyState === "loading") {
+  console.log("[v0] Adding DOMContentLoaded listener")
+  document.addEventListener("DOMContentLoaded", showImmediateContent)
+} else {
+  console.log("[v0] DOM already ready, showing content now")
+  showImmediateContent()
+}
+
+// Lazy load Forge Bridge - don't block rendering
+let forgeBridgeModule = null
+const loadForgeBridge = async () => {
+  if (!forgeBridgeModule) {
+    try {
+      console.log("[v0] Loading @forge/bridge...")
+      forgeBridgeModule = await import("@forge/bridge")
+      console.log("[v0] @forge/bridge loaded:", Object.keys(forgeBridgeModule))
+    } catch (err) {
+      console.error("[v0] Failed to load @forge/bridge:", err)
+    }
+  }
+  return forgeBridgeModule
+}
+
+const invokeResolver = async (functionKey, payload) => {
+  console.log("[v0] invokeResolver:", functionKey, payload)
+  const bridge = await loadForgeBridge()
+  if (bridge && bridge.invoke) {
+    const result = await bridge.invoke(functionKey, payload)
+    console.log("[v0] invokeResolver result:", result)
+    return result
+  }
+  throw new Error("Forge Bridge not available")
+}
 
 function App() {
   console.log("[v0] App component rendering")
@@ -17,99 +75,82 @@ function App() {
   const [loading, setLoading] = useState(false)
   const [forecast, setForecast] = useState(null)
   const [error, setError] = useState(null)
+  const [bridgeStatus, setBridgeStatus] = useState("checking...")
 
-  // Fetch available projects on mount
   useEffect(() => {
-    console.log("[v0] App mounted, loading projects")
-    loadProjects()
+    console.log("[v0] App mounted")
+    // Check bridge availability
+    loadForgeBridge().then(bridge => {
+      if (bridge) {
+        setBridgeStatus("connected")
+        loadProjects()
+      } else {
+        setBridgeStatus("not available")
+        setError("Forge Bridge not available - are you running inside Jira?")
+      }
+    })
   }, [])
 
   const loadProjects = async () => {
-    console.log("[v0] loadProjects: Starting to fetch projects")
+    console.log("[v0] loadProjects: Starting")
     try {
-      console.log("[v0] loadProjects: Calling invoke('getProjects')")
-      const result = await invoke("getProjects")
-      console.log("[v0] loadProjects: Received result:", JSON.stringify(result, null, 2))
-
-      if (result.success) {
-        console.log("[v0] loadProjects: Setting projects, count:", result.projects.length)
-        setProjects(result.projects)
-        if (result.projects.length > 0) {
-          console.log("[v0] loadProjects: Setting selected project to:", result.projects[0].key)
+      const result = await invokeResolver("getProjects")
+      console.log("[v0] loadProjects result:", result)
+      if (result && result.success) {
+        setProjects(result.projects || [])
+        if (result.projects && result.projects.length > 0) {
           setSelectedProject(result.projects[0].key)
         }
       } else {
-        console.error("[v0] loadProjects: Result not successful:", result)
-        setError("Failed to load projects: " + (result.error || "Unknown error"))
+        setError("Failed to load projects: " + (result?.error || "Unknown error"))
       }
     } catch (err) {
-      console.error("[v0] loadProjects: Exception caught:", err)
-      console.error("[v0] loadProjects: Error stack:", err.stack)
+      console.error("[v0] loadProjects error:", err)
       setError("Failed to load projects: " + err.message)
     }
   }
 
   const runForecast = async () => {
-    if (!selectedProject) {
-      console.warn("[v0] runForecast: No project selected")
-      return
-    }
-
-    console.log("[v0] runForecast: Starting forecast for project:", selectedProject)
+    if (!selectedProject) return
+    console.log("[v0] runForecast for:", selectedProject)
     setLoading(true)
     setError(null)
 
     try {
-      // Step 1: Fetch and aggregate data
-      console.log("[v0] runForecast: Step 1 - Calling fetchAndAggregate")
-      const aggregateResult = await invoke("fetchAndAggregate", {
+      const aggregateResult = await invokeResolver("fetchAndAggregate", {
         scopeType: "project",
         scopeParams: { projectKey: selectedProject },
       })
-      console.log("[v0] runForecast: Aggregate result:", JSON.stringify(aggregateResult, null, 2))
 
-      if (!aggregateResult.success) {
-        throw new Error(aggregateResult.error)
+      if (!aggregateResult?.success) {
+        throw new Error(aggregateResult?.error || "Aggregation failed")
       }
 
-      // Step 2: Compute baseline forecast
-      console.log("[v0] runForecast: Step 2 - Calling computeBaseline")
-      const forecastResult = await invoke("computeBaseline", {
+      const forecastResult = await invokeResolver("computeBaseline", {
         snapshotId: aggregateResult.snapshotId,
         throughput: aggregateResult.throughput,
         remaining: aggregateResult.remaining,
       })
-      console.log("[v0] runForecast: Forecast result:", JSON.stringify(forecastResult, null, 2))
 
-      if (!forecastResult.success) {
-        throw new Error(forecastResult.error)
+      if (!forecastResult?.success) {
+        throw new Error(forecastResult?.error || "Forecast failed")
       }
 
-      console.log("[v0] runForecast: Setting forecast state")
       setForecast(forecastResult)
     } catch (err) {
-      console.error("[v0] runForecast: Exception:", err)
-      console.error("[v0] runForecast: Error stack:", err.stack)
+      console.error("[v0] runForecast error:", err)
       setError(err.message || "Failed to compute forecast")
     } finally {
       setLoading(false)
-      console.log("[v0] runForecast: Complete")
     }
   }
-
-  console.log("[v0] App render state:", {
-    projectsCount: projects.length,
-    selectedProject,
-    loading,
-    hasError: !!error,
-    hasForecast: !!forecast,
-  })
 
   return (
     <div className="app">
       <header className="header">
         <h1>Project Forecast</h1>
         <p>Monte Carlo simulation-based forecasting for Jira projects</p>
+        <small>Bridge: {bridgeStatus}</small>
       </header>
 
       <div className="controls">
@@ -121,6 +162,7 @@ function App() {
             onChange={(e) => setSelectedProject(e.target.value)}
             disabled={loading}
           >
+            {projects.length === 0 && <option value="">Loading projects...</option>}
             {projects.map((project) => (
               <option key={project.key} value={project.key}>
                 {project.name} ({project.key})
@@ -143,64 +185,19 @@ function App() {
       {forecast && (
         <div className="results">
           <h2>Forecast Results</h2>
-
           <div className="stats-grid">
             <div className="stat-card">
               <div className="stat-label">P50 (Median)</div>
               <div className="stat-value">{forecast.p50} weeks</div>
-              <div className="stat-desc">50% confidence</div>
             </div>
-
             <div className="stat-card">
               <div className="stat-label">P80</div>
               <div className="stat-value">{forecast.p80} weeks</div>
-              <div className="stat-desc">80% confidence</div>
             </div>
-
             <div className="stat-card">
               <div className="stat-label">P95</div>
               <div className="stat-value">{forecast.p95} weeks</div>
-              <div className="stat-desc">95% confidence</div>
             </div>
-          </div>
-
-          <div className="work-summary">
-            <h3>Work Summary</h3>
-            <div className="summary-grid">
-              <div>
-                <strong>Remaining Work:</strong> {forecast.remainingWork} points
-              </div>
-              <div>
-                <strong>Issues:</strong> {forecast.remainingIssues}
-              </div>
-              <div>
-                <strong>Unestimated:</strong> {forecast.unestimatedIssues}
-              </div>
-            </div>
-          </div>
-
-          {forecast.throughputStats && (
-            <div className="throughput-stats">
-              <h3>Throughput Statistics</h3>
-              <div className="summary-grid">
-                <div>
-                  <strong>Median:</strong> {forecast.throughputStats.median.toFixed(1)} points/week
-                </div>
-                <div>
-                  <strong>Mean:</strong> {forecast.throughputStats.mean.toFixed(1)} points/week
-                </div>
-                <div>
-                  <strong>Range:</strong> {forecast.throughputStats.min} - {forecast.throughputStats.max} points
-                </div>
-              </div>
-            </div>
-          )}
-
-          <div className="meta">
-            <small>
-              Computed at: {new Date(forecast.computedAt).toLocaleString()} | Execution time: {forecast.executionTime}ms
-              | Snapshot: {forecast.snapshotId}
-            </small>
           </div>
         </div>
       )}
@@ -208,33 +205,38 @@ function App() {
   )
 }
 
-console.log("[v0] Setting up theme subscription")
-view.theme.subscribe((theme) => {
-  console.log("[v0] Theme changed:", theme)
-  document.body.className = theme.colorMode === "dark" ? "dark-mode" : "light-mode"
-})
-
-console.log("[v0] Waiting for DOM ready")
-if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", initializeApp)
-} else {
-  initializeApp()
-}
-
-function initializeApp() {
-  console.log("[v0] DOM ready, initializing React app")
+// Initialize React after a short delay to ensure DOM is ready
+console.log("[v0] Setting up React initialization")
+const initializeReact = () => {
+  console.log("[v0] initializeReact called")
   const rootElement = document.getElementById("root")
-
+  
   if (!rootElement) {
     console.error("[v0] CRITICAL: Root element not found!")
-    document.body.innerHTML =
-      '<div style="padding: 20px; color: red; font-family: sans-serif;"><h1>Error</h1><p>Root element #root not found. Check that index.html has the correct structure.</p></div>'
     return
   }
 
-  console.log("[v0] Root element found, creating React root")
-  const root = ReactDOM.createRoot(rootElement)
-  console.log("[v0] Rendering App component")
-  root.render(<App />)
-  console.log("[v0] App rendered successfully")
+  console.log("[v0] Creating React root")
+  try {
+    const root = ReactDOM.createRoot(rootElement)
+    console.log("[v0] Rendering App")
+    root.render(<App />)
+    console.log("[v0] App rendered successfully")
+  } catch (err) {
+    console.error("[v0] React render error:", err)
+    rootElement.innerHTML = '<div style="color: red; padding: 20px;">React Error: ' + err.message + '</div>'
+  }
 }
+
+// Wait for DOM then initialize
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", () => {
+    console.log("[v0] DOMContentLoaded fired")
+    setTimeout(initializeReact, 100)
+  })
+} else {
+  console.log("[v0] DOM ready, initializing after timeout")
+  setTimeout(initializeReact, 100)
+}
+
+console.log("[v0] Script end reached")
