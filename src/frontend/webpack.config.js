@@ -9,7 +9,7 @@ module.exports = (env, argv) => {
     output: {
       path: path.resolve(__dirname, "build"),
       filename: "bundle.js",
-      publicPath: "/",
+      publicPath: "",
       clean: true, // Clean build directory before each build
     },
     mode: isProduction ? "production" : "development",
