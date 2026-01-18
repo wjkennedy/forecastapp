@@ -184,25 +184,38 @@ function buildJQL(scopeType, scopeParams) {
 }
 
 /**
- * Fetch all issues from Jira API with pagination
+ * Fetch all issues from Jira API with pagination using the new /search/jql endpoint
  */
 async function fetchAllIssues(jql) {
   const allIssues = [];
-  let startAt = 0;
+  let nextPageToken = null;
   const maxResults = 100;
-  let total = 0;
-  const fields = 'summary,issuetype,status,project,parent,customfield_10014,customfield_10016,timeoriginalestimate,created,updated,resolutiondate,assignee';
+  const fields = ['summary', 'issuetype', 'status', 'project', 'parent', 'customfield_10014', 'customfield_10016', 'timeoriginalestimate', 'created', 'updated', 'resolutiondate', 'assignee'];
   
   do {
-    console.log(`Fetching issues with JQL: ${jql}, startAt: ${startAt}`);
+    console.log(`Fetching issues with JQL: ${jql}, nextPageToken: ${nextPageToken || 'null'}`);
     
-    // Use the route template literal correctly - parameters must be interpolated directly
+    // Build request body for POST /rest/api/3/search/jql
+    const requestBody = {
+      jql: jql,
+      fields: fields,
+      maxResults: maxResults
+    };
+    
+    if (nextPageToken) {
+      requestBody.nextPageToken = nextPageToken;
+    }
+    
+    // Use POST to /rest/api/3/search/jql
     const response = await api.asUser().requestJira(
-      route`/rest/api/3/search?jql=${jql}&startAt=${startAt}&maxResults=${maxResults}&fields=${fields}`,
+      route`/rest/api/3/search/jql`,
       {
+        method: 'POST',
         headers: {
-          'Accept': 'application/json'
-        }
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(requestBody)
       }
     );
     
@@ -215,16 +228,17 @@ async function fetchAllIssues(jql) {
     }
     
     const data = await response.json();
-    total = data.total || 0;
     
     // Transform Jira issues to our schema
     const issues = (data.issues || []).map(transformIssue);
     allIssues.push(...issues);
     
-    startAt += maxResults;
-    console.log(`Fetched ${allIssues.length} of ${total} issues`);
+    // Get next page token for pagination
+    nextPageToken = data.nextPageToken || null;
     
-  } while (startAt < total && allIssues.length < 5000); // Safety limit
+    console.log(`Fetched ${allIssues.length} issues so far, nextPageToken: ${nextPageToken || 'none'}`);
+    
+  } while (nextPageToken && allIssues.length < 5000); // Safety limit
   
   return allIssues;
 }
