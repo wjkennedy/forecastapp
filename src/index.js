@@ -1,4 +1,5 @@
 import Resolver from "@forge/resolver"
+import api, { route } from "@forge/api"
 
 console.log("[v0] ==========================================")
 console.log("[v0] ===== RESOLVER MODULE LOADING =====")
@@ -20,11 +21,52 @@ console.log("[v0] ========================================")
 /**
  * Get list of projects accessible to the user
  */
-resolver.define("getProjects", async () => {
+resolver.define("getProjects", async ({ context }) => {
   console.log("[v0] ====== getProjects called ======")
-  return {
-    success: true,
-    projects: [{ key: "TEST", name: "Test Project", id: "1" }],
+  console.log("[v0] Context:", JSON.stringify(context, null, 2))
+  
+  try {
+    const response = await api.asUser().requestJira(route`/rest/api/3/project/search`, {
+      headers: {
+        'Accept': 'application/json'
+      }
+    })
+    
+    console.log("[v0] Jira API response status:", response.status)
+    
+    if (!response.ok) {
+      const errorText = await response.text()
+      console.error("[v0] Jira API error:", errorText)
+      return {
+        success: false,
+        error: `Jira API error: ${response.status}`,
+        projects: []
+      }
+    }
+    
+    const data = await response.json()
+    console.log("[v0] Projects found:", data.values?.length || 0)
+    
+    const projects = (data.values || []).map(p => ({
+      key: p.key,
+      name: p.name,
+      id: p.id
+    }))
+    
+    console.log("[v0] Returning projects:", JSON.stringify(projects))
+    
+    return {
+      success: true,
+      projects: projects
+    }
+  } catch (error) {
+    console.error("[v0] getProjects EXCEPTION:", error.message)
+    console.error("[v0] getProjects stack:", error.stack)
+    return {
+      success: false,
+      error: error.message,
+      projects: []
+    }
   }
 })
 
