@@ -1,8 +1,7 @@
-import duckdb from 'duckdb';
 import seedrandom from 'seedrandom';
 
 /**
- * Compute scenario forecast by applying deltas to baseline
+ * Compute scenario forecast by applying deltas to baseline using pure JavaScript
  * 
  * @param {Object} req - Forge request object
  * @param {string} req.payload.snapshotId - Snapshot identifier
@@ -19,134 +18,73 @@ export async function handler(req) {
     
     console.log(`Applying ${deltas.length} deltas to baseline`);
     
-    // Initialize DuckDB
-    const db = new duckdb.Database(':memory:');
-    const conn = db.connect();
+    // 1. Clone baseline issues for modification
+    const issues = (baselineData.issues || []).map(issue => ({
+      key: issue.key,
+      storyPoints: issue.storyPoints || 0,
+      statusCategory: issue.statusCategory,
+      team: issue.team,
+      epicKey: issue.epicKey,
+      inScope: true
+    }));
     
-    // 1. Load baseline issues into DuckDB
-    conn.exec(`
-      CREATE TABLE baseline_issues (
-        key VARCHAR PRIMARY KEY,
-        story_points DOUBLE,
-        status_category VARCHAR,
-        team VARCHAR,
-        epic_key VARCHAR,
-        in_scope BOOLEAN DEFAULT true
-      )
-    `);
-    
-    // Insert baseline data
-    const stmt = conn.prepare(`
-      INSERT INTO baseline_issues VALUES (?, ?, ?, ?, ?, ?)
-    `);
-    
-    for (const issue of baselineData.issues) {
-      stmt.run(
-        issue.key,
-        issue.storyPoints || 0,
-        issue.statusCategory,
-        issue.team,
-        issue.epicKey,
-        true
-      );
-    }
-    stmt.finalize();
-    
-    // 2. Create deltas table
-    conn.exec(`
-      CREATE TABLE deltas (
-        delta_type VARCHAR,
-        entity_key VARCHAR,
-        delta_value JSON
-      )
-    `);
-    
-    const deltaStmt = conn.prepare(`
-      INSERT INTO deltas VALUES (?, ?, ?)
-    `);
-    
-    for (const delta of deltas) {
-      deltaStmt.run(
-        delta.delta_type,
-        delta.entity_key,
-        JSON.stringify(delta.delta_value)
-      );
-    }
-    deltaStmt.finalize();
-    
-    console.log('Baseline and deltas loaded into DuckDB');
-    
-    // 3. Apply scope deltas (add/remove)
-    // Mark removed issues as out of scope
+    // 2. Apply scope deltas (remove)
     const scopeRemoveDeltas = deltas.filter(d => d.delta_type === 'scope_remove');
-    if (scopeRemoveDeltas.length > 0) {
-      const removeKeys = scopeRemoveDeltas.map(d => `'${d.entity_key}'`).join(',');
-      conn.exec(`
-        UPDATE baseline_issues 
-        SET in_scope = false 
-        WHERE key IN (${removeKeys})
-      `);
-      console.log(`Removed ${scopeRemoveDeltas.length} issues from scope`);
-    }
-    
-    // Add new issues to scope
-    const scopeAddDeltas = deltas.filter(d => d.delta_type === 'scope_add');
-    if (scopeAddDeltas.length > 0) {
-      const addStmt = conn.prepare(`
-        INSERT INTO baseline_issues VALUES (?, ?, ?, ?, ?, ?)
-      `);
-      
-      for (const delta of scopeAddDeltas) {
-        const value = delta.delta_value;
-        addStmt.run(
-          delta.entity_key,
-          value.estimate || 0,
-          'To Do',
-          value.team || 'default',
-          value.epic || null,
-          true
-        );
+    for (const delta of scopeRemoveDeltas) {
+      const issue = issues.find(i => i.key === delta.entity_key);
+      if (issue) {
+        issue.inScope = false;
       }
-      addStmt.finalize();
-      console.log(`Added ${scopeAddDeltas.length} issues to scope`);
     }
+    console.log(`Removed ${scopeRemoveDeltas.length} issues from scope`);
+    
+    // 3. Apply scope deltas (add)
+    const scopeAddDeltas = deltas.filter(d => d.delta_type === 'scope_add');
+    for (const delta of scopeAddDeltas) {
+      const value = delta.delta_value;
+      issues.push({
+        key: delta.entity_key,
+        storyPoints: value.estimate || 0,
+        statusCategory: 'To Do',
+        team: value.team || 'default',
+        epicKey: value.epic || null,
+        inScope: true
+      });
+    }
+    console.log(`Added ${scopeAddDeltas.length} issues to scope`);
     
     // 4. Apply estimate overrides
     const estimateOverrides = deltas.filter(d => d.delta_type === 'estimate_override');
-    if (estimateOverrides.length > 0) {
-      for (const delta of estimateOverrides) {
-        conn.exec(`
-          UPDATE baseline_issues 
-          SET story_points = ${delta.delta_value.story_points}
-          WHERE key = '${delta.entity_key}'
-        `);
+    for (const delta of estimateOverrides) {
+      const issue = issues.find(i => i.key === delta.entity_key);
+      if (issue) {
+        issue.storyPoints = delta.delta_value.story_points;
       }
-      console.log(`Applied ${estimateOverrides.length} estimate overrides`);
     }
+    console.log(`Applied ${estimateOverrides.length} estimate overrides`);
     
     // 5. Compute adjusted remaining work
-    const remainingQuery = `
-      SELECT 
-        COUNT(*) as issue_count,
-        SUM(story_points) as total_points,
-        team,
-        SUM(story_points) as team_points
-      FROM baseline_issues
-      WHERE status_category IN ('To Do', 'In Progress')
-        AND in_scope = true
-      GROUP BY team
-    `;
+    const remainingIssues = issues.filter(i => 
+      i.inScope && (i.statusCategory === 'To Do' || i.statusCategory === 'In Progress')
+    );
     
-    const teamRemaining = conn.all(remainingQuery);
+    const totalRemaining = {
+      issue_count: remainingIssues.length,
+      total_points: remainingIssues.reduce((sum, i) => sum + i.storyPoints, 0)
+    };
     
-    const totalRemaining = conn.get(`
-      SELECT 
-        COUNT(*) as issue_count,
-        SUM(story_points) as total_points
-      FROM baseline_issues
-      WHERE status_category IN ('To Do', 'In Progress')
-        AND in_scope = true
-    `);
+    // Team breakdown
+    const teamMap = new Map();
+    for (const issue of remainingIssues) {
+      const team = issue.team || 'unassigned';
+      if (!teamMap.has(team)) {
+        teamMap.set(team, { team, issueCount: 0, totalPoints: 0 });
+      }
+      const t = teamMap.get(team);
+      t.issueCount += 1;
+      t.totalPoints += issue.storyPoints;
+    }
+    const teamRemaining = Array.from(teamMap.values());
     
     console.log(`Adjusted remaining: ${totalRemaining.total_points} points`);
     
@@ -155,10 +93,6 @@ export async function handler(req) {
       baselineData.throughput,
       deltas.filter(d => d.delta_type === 'capacity_multiplier')
     );
-    
-    // 7. Close DuckDB connection
-    conn.close();
-    db.close();
     
     // 8. Run Monte Carlo simulation with adjusted inputs
     const forecast = runMonteCarloSimulation(

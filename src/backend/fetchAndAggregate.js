@@ -1,8 +1,7 @@
 import api, { route } from '@forge/api';
-import duckdb from 'duckdb';
 
 /**
- * Fetch Jira issues and compute baseline aggregations
+ * Fetch Jira issues and compute baseline aggregations using pure JavaScript
  * 
  * @param {Object} req - Forge request object
  * @param {string} req.payload.scopeType - 'project' | 'epic' | 'jql'
@@ -12,7 +11,6 @@ import duckdb from 'duckdb';
 export async function handler(req) {
   const startTime = Date.now();
   console.log('=== FETCH AND AGGREGATE STARTED ===');
-  console.log('Request:', JSON.stringify(req, null, 2));
   console.log('Payload:', JSON.stringify(req.payload, null, 2));
   
   try {
@@ -26,111 +24,18 @@ export async function handler(req) {
     const issues = await fetchAllIssues(jql);
     console.log(`Fetched ${issues.length} issues`);
     
-    // 3. Initialize DuckDB in-memory
-    const db = new duckdb.Database(':memory:');
-    const conn = db.connect();
+    // 3. Compute historical throughput using JavaScript
+    const throughput = computeThroughput(issues);
+    console.log(`Computed throughput: ${throughput.weeklyData.length} weeks`);
     
-    // 4. Create issues table
-    conn.exec(`
-      CREATE TABLE issues (
-        key VARCHAR PRIMARY KEY,
-        summary VARCHAR,
-        issue_type VARCHAR,
-        status VARCHAR,
-        status_category VARCHAR,
-        
-        project_key VARCHAR,
-        epic_key VARCHAR,
-        parent_key VARCHAR,
-        
-        story_points DOUBLE,
-        original_estimate_seconds INTEGER,
-        
-        created TIMESTAMP,
-        updated TIMESTAMP,
-        resolved TIMESTAMP,
-        
-        assignee VARCHAR,
-        team VARCHAR
-      )
-    `);
-    
-    // 5. Insert issues (batch insert for performance)
-    const stmt = conn.prepare(`
-      INSERT INTO issues VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-    
-    for (const issue of issues) {
-      stmt.run(
-        issue.key,
-        issue.summary,
-        issue.issueType,
-        issue.status,
-        issue.statusCategory,
-        issue.projectKey,
-        issue.epicKey,
-        issue.parentKey,
-        issue.storyPoints,
-        issue.originalEstimateSeconds,
-        issue.created,
-        issue.updated,
-        issue.resolved,
-        issue.assignee,
-        issue.team
-      );
-    }
-    stmt.finalize();
-    
-    console.log('Issues loaded into DuckDB');
-    
-    // 6. Compute historical throughput (last 26 weeks)
-    const throughputQuery = `
-      SELECT 
-        DATE_TRUNC('week', resolved) as week_start,
-        team,
-        SUM(story_points) as points_completed,
-        COUNT(*) as issues_completed
-      FROM issues
-      WHERE status_category = 'Done'
-        AND resolved >= CURRENT_DATE - INTERVAL '26 weeks'
-        AND story_points IS NOT NULL
-      GROUP BY 1, 2
-      ORDER BY 1
-    `;
-    
-    const throughput = conn.all(throughputQuery);
-    console.log(`Computed throughput: ${throughput.length} weeks`);
-    
-    // 7. Compute remaining work
-    const remainingQuery = `
-      SELECT 
-        COUNT(*) as issue_count,
-        SUM(COALESCE(story_points, 0)) as total_points,
-        SUM(CASE WHEN story_points IS NULL THEN 1 ELSE 0 END) as unestimated_count
-      FROM issues
-      WHERE status_category IN ('To Do', 'In Progress')
-    `;
-    
-    const remaining = conn.get(remainingQuery);
+    // 4. Compute remaining work
+    const remaining = computeRemaining(issues);
     console.log('Remaining work:', remaining);
     
-    // 8. Get team summary
-    const teamSummary = conn.all(`
-      SELECT 
-        team,
-        COUNT(*) as issue_count,
-        SUM(COALESCE(story_points, 0)) as total_points
-      FROM issues
-      WHERE status_category IN ('To Do', 'In Progress')
-      GROUP BY team
-      ORDER BY total_points DESC
-    `);
+    // 5. Get team summary
+    const teamSummary = computeTeamSummary(issues);
     
-    // 9. Close connection
-    conn.close();
-    db.close();
-    
-    // 10. Generate snapshot ID (hash of issue keys)
+    // 6. Generate snapshot ID
     const snapshotId = generateSnapshotId(issues);
     
     const elapsed = Date.now() - startTime;
@@ -143,9 +48,7 @@ export async function handler(req) {
       remaining,
       teamSummary,
       issueCount: issues.length,
-      executionTime: elapsed,
-      // Don't return full issues to save payload size
-      // Frontend can request specific issues if needed
+      executionTime: elapsed
     };
     
   } catch (error) {
@@ -156,6 +59,109 @@ export async function handler(req) {
       stack: error.stack
     };
   }
+}
+
+/**
+ * Compute historical throughput from issues (pure JavaScript)
+ */
+function computeThroughput(issues) {
+  const now = new Date();
+  const weeksAgo = 12; // Look back 12 weeks
+  const cutoffDate = new Date(now.getTime() - (weeksAgo * 7 * 24 * 60 * 60 * 1000));
+  
+  // Filter resolved issues within the time window
+  const resolvedIssues = issues.filter(issue => {
+    if (issue.statusCategory !== 'Done' || !issue.resolved) return false;
+    const resolvedDate = new Date(issue.resolved);
+    return resolvedDate >= cutoffDate;
+  });
+  
+  // Group by week
+  const weeklyMap = new Map();
+  
+  for (const issue of resolvedIssues) {
+    const resolvedDate = new Date(issue.resolved);
+    const weekStart = getWeekStart(resolvedDate);
+    const weekKey = weekStart.toISOString().split('T')[0];
+    
+    if (!weeklyMap.has(weekKey)) {
+      weeklyMap.set(weekKey, { weekStart: weekKey, issuesCompleted: 0, pointsCompleted: 0 });
+    }
+    
+    const week = weeklyMap.get(weekKey);
+    week.issuesCompleted += 1;
+    week.pointsCompleted += issue.storyPoints || 0;
+  }
+  
+  // Convert to array and sort
+  const weeklyData = Array.from(weeklyMap.values()).sort((a, b) => a.weekStart.localeCompare(b.weekStart));
+  
+  // Compute averages
+  const issuesPerWeek = weeklyData.map(w => w.issuesCompleted);
+  const pointsPerWeek = weeklyData.map(w => w.pointsCompleted);
+  
+  return {
+    weeklyData,
+    issuesPerWeek,
+    pointsPerWeek,
+    avgIssuesPerWeek: issuesPerWeek.length > 0 ? issuesPerWeek.reduce((a, b) => a + b, 0) / issuesPerWeek.length : 0,
+    avgPointsPerWeek: pointsPerWeek.length > 0 ? pointsPerWeek.reduce((a, b) => a + b, 0) / pointsPerWeek.length : 0,
+    weeksAnalyzed: weeklyData.length
+  };
+}
+
+/**
+ * Compute remaining work from issues
+ */
+function computeRemaining(issues) {
+  const remainingIssues = issues.filter(issue => 
+    issue.statusCategory === 'To Do' || issue.statusCategory === 'In Progress'
+  );
+  
+  const issueCount = remainingIssues.length;
+  const totalPoints = remainingIssues.reduce((sum, issue) => sum + (issue.storyPoints || 0), 0);
+  const unestimatedCount = remainingIssues.filter(issue => !issue.storyPoints).length;
+  
+  return {
+    issueCount,
+    totalPoints,
+    unestimatedCount
+  };
+}
+
+/**
+ * Compute team summary
+ */
+function computeTeamSummary(issues) {
+  const remainingIssues = issues.filter(issue => 
+    issue.statusCategory === 'To Do' || issue.statusCategory === 'In Progress'
+  );
+  
+  const teamMap = new Map();
+  
+  for (const issue of remainingIssues) {
+    const team = issue.team || 'unassigned';
+    
+    if (!teamMap.has(team)) {
+      teamMap.set(team, { team, issueCount: 0, totalPoints: 0 });
+    }
+    
+    const summary = teamMap.get(team);
+    summary.issueCount += 1;
+    summary.totalPoints += issue.storyPoints || 0;
+  }
+  
+  return Array.from(teamMap.values()).sort((a, b) => b.totalPoints - a.totalPoints);
+}
+
+/**
+ * Get the start of the week (Monday) for a date
+ */
+function getWeekStart(date) {
+  const d = new Date(date);
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Adjust for Sunday
+  return new Date(d.setDate(diff));
 }
 
 /**
