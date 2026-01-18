@@ -16,12 +16,39 @@ export async function handler(req) {
   try {
     const { snapshotId, throughput, remaining } = req.payload;
     
+    // Handle new throughput structure from fetchAndAggregate
+    // throughput is now an object with { weeklyData, issuesPerWeek, pointsPerWeek, avgIssuesPerWeek, ... }
+    let throughputData = [];
+    
+    if (Array.isArray(throughput)) {
+      // Old format - array of { points_completed, ... }
+      throughputData = throughput;
+    } else if (throughput && throughput.weeklyData) {
+      // New format - object with weeklyData array
+      throughputData = throughput.weeklyData.map(w => ({
+        points_completed: w.pointsCompleted || 0,
+        issues_completed: w.issuesCompleted || 0,
+        week_start: w.weekStart
+      }));
+    } else if (throughput && throughput.pointsPerWeek) {
+      // Alternative format - just arrays of values
+      throughputData = throughput.pointsPerWeek.map((points, i) => ({
+        points_completed: points,
+        issues_completed: throughput.issuesPerWeek?.[i] || 0
+      }));
+    }
+    
     // Validate inputs
-    if (!throughput || throughput.length === 0) {
+    if (!throughputData || throughputData.length === 0) {
       throw new Error('No historical throughput data available');
     }
     
-    if (!remaining || remaining.total_points === 0) {
+    // Get remaining work - handle different property names
+    const remainingPoints = remaining?.total_points ?? remaining?.totalPoints ?? 0;
+    const remainingIssues = remaining?.issue_count ?? remaining?.issueCount ?? 0;
+    const unestimatedCount = remaining?.unestimated_count ?? remaining?.unestimatedCount ?? 0;
+    
+    if (remainingPoints === 0 && remainingIssues === 0) {
       return {
         success: true,
         message: 'No remaining work - project is complete!',
@@ -31,25 +58,32 @@ export async function handler(req) {
       };
     }
     
-    console.log(`Running simulation with ${remaining.total_points} points remaining`);
-    console.log(`Historical throughput: ${throughput.length} weeks`);
+    // Use issue count if no story points
+    const workToComplete = remainingPoints > 0 ? remainingPoints : remainingIssues;
+    const useIssueCount = remainingPoints === 0;
+    
+    console.log(`Running simulation with ${workToComplete} ${useIssueCount ? 'issues' : 'points'} remaining`);
+    console.log(`Historical throughput: ${throughputData.length} weeks`);
     
     // Run Monte Carlo simulation
     const samples = 10000;
-    const seed = snapshotId; // Deterministic based on snapshot
+    const seed = snapshotId || 'default'; // Deterministic based on snapshot
     const rng = seedrandom(seed);
     
     const completionWeeks = [];
     
     for (let i = 0; i < samples; i++) {
-      let remainingWork = remaining.total_points;
+      let remainingWork = workToComplete;
       let weeks = 0;
       const maxWeeks = 104; // 2 years max
       
       while (remainingWork > 0 && weeks < maxWeeks) {
         // Resample from historical throughput
-        const randomIndex = Math.floor(rng() * throughput.length);
-        const weekThroughput = throughput[randomIndex].points_completed || 0;
+        const randomIndex = Math.floor(rng() * throughputData.length);
+        const weekData = throughputData[randomIndex];
+        const weekThroughput = useIssueCount 
+          ? (weekData.issues_completed || weekData.issuesCompleted || 0)
+          : (weekData.points_completed || weekData.pointsCompleted || 0);
         
         remainingWork -= weekThroughput;
         weeks++;
@@ -72,10 +106,10 @@ export async function handler(req) {
     const distribution = generateHistogram(completionWeeks);
     
     // Generate burn-down projection
-    const burnDown = generateBurnDown(remaining.total_points, throughput, p50, p80);
+    const burnDown = generateBurnDown(workToComplete, throughputData, p50, p80, useIssueCount);
     
     // Calculate throughput statistics
-    const throughputStats = calculateThroughputStats(throughput);
+    const throughputStats = calculateThroughputStats(throughputData, useIssueCount);
     
     const elapsed = Date.now() - startTime;
     console.log(`computeBaseline completed in ${elapsed}ms`);
@@ -93,9 +127,11 @@ export async function handler(req) {
       p95,
       
       // Input summary
-      remainingWork: remaining.total_points,
-      remainingIssues: remaining.issue_count,
-      unestimatedIssues: remaining.unestimated_count,
+      remainingWork: workToComplete,
+      remainingIssues: remainingIssues,
+      unestimatedIssues: unestimatedCount,
+      useIssueCount: useIssueCount,
+      weeksAnalyzed: throughputData.length,
       
       // Throughput stats
       throughputStats,
@@ -141,11 +177,15 @@ function generateHistogram(completionWeeks) {
 /**
  * Generate burn-down projection
  */
-function generateBurnDown(totalWork, throughput, p50Weeks, p80Weeks) {
+function generateBurnDown(totalWork, throughputData, p50Weeks, p80Weeks, useIssueCount = false) {
   // Calculate median throughput
-  const throughputValues = throughput.map(t => t.points_completed || 0);
+  const throughputValues = throughputData.map(t => 
+    useIssueCount 
+      ? (t.issues_completed || t.issuesCompleted || 0)
+      : (t.points_completed || t.pointsCompleted || 0)
+  );
   throughputValues.sort((a, b) => a - b);
-  const medianThroughput = throughputValues[Math.floor(throughputValues.length / 2)];
+  const medianThroughput = throughputValues[Math.floor(throughputValues.length / 2)] || 1;
   
   // Generate weekly projections for P50 and P80
   const p50Projection = [];
@@ -162,7 +202,8 @@ function generateBurnDown(totalWork, throughput, p50Weeks, p80Weeks) {
   }
   
   // P80 line (pessimistic case - slower throughput)
-  const p20Throughput = throughputValues[Math.floor(throughputValues.length * 0.2)];
+  const p20Index = Math.floor(throughputValues.length * 0.2);
+  const p20Throughput = throughputValues[p20Index] || medianThroughput * 0.5;
   let p80Remaining = totalWork;
   for (let week = 0; week <= p80Weeks && p80Remaining > 0; week++) {
     p80Projection.push({
@@ -181,8 +222,12 @@ function generateBurnDown(totalWork, throughput, p50Weeks, p80Weeks) {
 /**
  * Calculate throughput statistics
  */
-function calculateThroughputStats(throughput) {
-  const values = throughput.map(t => t.points_completed || 0).filter(v => v > 0);
+function calculateThroughputStats(throughputData, useIssueCount = false) {
+  const values = throughputData.map(t => 
+    useIssueCount 
+      ? (t.issues_completed || t.issuesCompleted || 0)
+      : (t.points_completed || t.pointsCompleted || 0)
+  ).filter(v => v > 0);
   
   if (values.length === 0) {
     return {
