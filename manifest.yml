@@ -1,14 +1,13 @@
 modules:
+  function:
+    - key: resolver
+      handler: index.handler
   jira:projectPage:
     - key: forecast-main
       title: Forecast
       resource: main
       resolver:
         function: resolver
-
-function:
-  - key: resolver
-    handler: index.handler
 
 resources:
   - key: main
