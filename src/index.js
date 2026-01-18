@@ -1,5 +1,8 @@
 import Resolver from "@forge/resolver"
 import api, { route } from "@forge/api"
+import { handler as fetchAndAggregateHandler } from "./backend/fetchAndAggregate.js"
+import { handler as computeBaselineHandler } from "./backend/computeBaseline.js"
+import { handler as computeScenarioHandler } from "./backend/computeScenario.js"
 
 console.log("[v0] ==========================================")
 console.log("[v0] ===== RESOLVER MODULE LOADING =====")
@@ -78,8 +81,7 @@ resolver.define("fetchAndAggregate", async ({ payload, context }) => {
   console.log("[v0] fetchAndAggregate: Payload:", JSON.stringify(payload, null, 2))
 
   try {
-    // Placeholder for fetchAndAggregateHandler
-    const result = { success: true, message: "Fetch and Aggregate is working!" }
+    const result = await fetchAndAggregateHandler({ payload, context })
     console.log("[v0] fetchAndAggregate: Result success:", result.success)
     if (!result.success) {
       console.error("[v0] fetchAndAggregate: Error:", result.error)
@@ -104,8 +106,7 @@ resolver.define("computeBaseline", async ({ payload, context }) => {
   console.log("[v0] computeBaseline: Payload:", JSON.stringify(payload, null, 2))
 
   try {
-    // Placeholder for computeBaselineHandler
-    const result = { success: true, message: "Compute Baseline is working!" }
+    const result = await computeBaselineHandler({ payload, context })
     console.log("[v0] computeBaseline result:", result.success ? "success" : "failed")
     return result
   } catch (error) {
@@ -127,8 +128,7 @@ resolver.define("computeScenario", async ({ payload, context }) => {
   console.log("[v0] computeScenario: Payload:", JSON.stringify(payload, null, 2))
 
   try {
-    // Placeholder for computeScenarioHandler
-    const result = { success: true, message: "Compute Scenario is working!" }
+    const result = await computeScenarioHandler({ payload, context })
     console.log("[v0] computeScenario result:", result.success ? "success" : "failed")
     return result
   } catch (error) {
