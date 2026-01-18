@@ -193,42 +193,30 @@ async function fetchAllIssues(jql) {
   let total = 0;
   
   do {
-    const response = await api.asApp().requestJira(route`/rest/api/3/search`, {
-      method: 'POST',
+    // Use POST to /rest/api/3/search/jql for JQL search
+    const searchUrl = `/rest/api/3/search/jql?jql=${encodeURIComponent(jql)}&startAt=${startAt}&maxResults=${maxResults}&fields=summary,issuetype,status,project,parent,customfield_10014,customfield_10016,timeoriginalestimate,created,updated,resolutiondate,assignee`;
+    
+    console.log(`Fetching issues from: ${searchUrl.substring(0, 100)}...`);
+    
+    const response = await api.asUser().requestJira(route`${searchUrl}`, {
       headers: {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        jql,
-        startAt,
-        maxResults,
-        fields: [
-          'summary',
-          'issuetype',
-          'status',
-          'project',
-          'parent',
-          'customfield_10014', // Epic Link (may vary)
-          'customfield_10016', // Story Points (may vary)
-          'timeoriginalestimate',
-          'created',
-          'updated',
-          'resolutiondate',
-          'assignee'
-        ]
-      })
+        'Accept': 'application/json'
+      }
     });
     
+    console.log(`Jira API response status: ${response.status}`);
+    
     if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`Jira API error response: ${errorText}`);
       throw new Error(`Jira API error: ${response.status} ${response.statusText}`);
     }
     
     const data = await response.json();
-    total = data.total;
+    total = data.total || 0;
     
     // Transform Jira issues to our schema
-    const issues = data.issues.map(transformIssue);
+    const issues = (data.issues || []).map(transformIssue);
     allIssues.push(...issues);
     
     startAt += maxResults;
