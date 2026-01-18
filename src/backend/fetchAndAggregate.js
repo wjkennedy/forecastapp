@@ -191,18 +191,20 @@ async function fetchAllIssues(jql) {
   let startAt = 0;
   const maxResults = 100;
   let total = 0;
+  const fields = 'summary,issuetype,status,project,parent,customfield_10014,customfield_10016,timeoriginalestimate,created,updated,resolutiondate,assignee';
   
   do {
-    // Use POST to /rest/api/3/search/jql for JQL search
-    const searchUrl = `/rest/api/3/search/jql?jql=${encodeURIComponent(jql)}&startAt=${startAt}&maxResults=${maxResults}&fields=summary,issuetype,status,project,parent,customfield_10014,customfield_10016,timeoriginalestimate,created,updated,resolutiondate,assignee`;
+    console.log(`Fetching issues with JQL: ${jql}, startAt: ${startAt}`);
     
-    console.log(`Fetching issues from: ${searchUrl.substring(0, 100)}...`);
-    
-    const response = await api.asUser().requestJira(route`${searchUrl}`, {
-      headers: {
-        'Accept': 'application/json'
+    // Use the route template literal correctly - parameters must be interpolated directly
+    const response = await api.asUser().requestJira(
+      route`/rest/api/3/search?jql=${jql}&startAt=${startAt}&maxResults=${maxResults}&fields=${fields}`,
+      {
+        headers: {
+          'Accept': 'application/json'
+        }
       }
-    });
+    );
     
     console.log(`Jira API response status: ${response.status}`);
     
