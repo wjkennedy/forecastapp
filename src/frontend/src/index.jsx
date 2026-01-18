@@ -67,15 +67,38 @@ const invokeResolver = async (functionKey, payload) => {
   throw new Error("Forge Bridge not available")
 }
 
-function App() {
-  console.log("[v0] App component rendering")
+function InfoPanel({ title, children, collapsible = false }) {
+  const [collapsed, setCollapsed] = useState(false)
+  
+  return (
+    <div className="info-panel">
+      <div 
+        className={`info-panel-header ${collapsible ? 'collapsible' : ''}`}
+        onClick={() => collapsible && setCollapsed(!collapsed)}
+      >
+        <span className="info-icon">i</span>
+        <span className="info-title">{title}</span>
+        {collapsible && <span className="collapse-icon">{collapsed ? '+' : '-'}</span>}
+      </div>
+      {!collapsed && <div className="info-panel-content">{children}</div>}
+    </div>
+  )
+}
 
+function HelpTooltip({ text }) {
+  return (
+    <span className="help-tooltip" title={text}>?</span>
+  )
+}
+
+function App() {
   const [projects, setProjects] = useState([])
   const [selectedProject, setSelectedProject] = useState("")
   const [loading, setLoading] = useState(false)
   const [forecast, setForecast] = useState(null)
   const [error, setError] = useState(null)
   const [bridgeStatus, setBridgeStatus] = useState("checking...")
+  const [showMethodology, setShowMethodology] = useState(false)
 
   useEffect(() => {
     console.log("[v0] App mounted")
@@ -149,13 +172,49 @@ function App() {
     <div className="app">
       <header className="header">
         <h1>Project Forecast</h1>
-        <p>Monte Carlo simulation-based forecasting for Jira projects</p>
-        <small>Bridge: {bridgeStatus}</small>
+        <p className="header-subtitle">Probabilistic completion forecasting using Monte Carlo simulation</p>
       </header>
+
+      <InfoPanel title="What is this tool?">
+        <p>
+          This forecast tool uses <strong>Monte Carlo simulation</strong> to predict when your project 
+          work will likely be completed. Instead of giving you a single estimate that's almost always wrong, 
+          it provides a range of outcomes based on your team's actual historical performance.
+        </p>
+        <p>
+          <strong>How it works:</strong> We analyze your team's past throughput (how many items completed per week), 
+          then run 10,000 simulations to determine the probability distribution of completion dates.
+        </p>
+        <button 
+          className="link-button" 
+          onClick={() => setShowMethodology(!showMethodology)}
+        >
+          {showMethodology ? 'Hide methodology details' : 'Learn more about the methodology'}
+        </button>
+        {showMethodology && (
+          <div className="methodology-details">
+            <h4>Understanding the Results</h4>
+            <ul>
+              <li><strong>P50 (Median):</strong> 50% chance of completing by this date. This is optimistic.</li>
+              <li><strong>P80:</strong> 80% chance of completing by this date. A reasonable target for planning.</li>
+              <li><strong>P95:</strong> 95% chance of completing by this date. Use this for commitments with low risk tolerance.</li>
+            </ul>
+            <h4>Data Used</h4>
+            <ul>
+              <li>Throughput is calculated from resolved issues in the past 12 weeks</li>
+              <li>Remaining work counts all unresolved issues in the selected scope</li>
+              <li>The simulation randomly samples from historical weekly throughput</li>
+            </ul>
+          </div>
+        )}
+      </InfoPanel>
 
       <div className="controls">
         <div className="control-group">
-          <label htmlFor="project-select">Select Project:</label>
+          <label htmlFor="project-select">
+            Select Project
+            <HelpTooltip text="Choose the Jira project to forecast. The tool will analyze all issues in this project." />
+          </label>
           <select
             id="project-select"
             value={selectedProject}
@@ -169,10 +228,13 @@ function App() {
               </option>
             ))}
           </select>
+          <span className="control-hint">
+            {projects.length > 0 ? `${projects.length} projects available` : 'Loading...'}
+          </span>
         </div>
 
         <button onClick={runForecast} disabled={loading || !selectedProject} className="run-button">
-          {loading ? "Computing..." : "Run Forecast"}
+          {loading ? "Running simulation..." : "Run Forecast"}
         </button>
       </div>
 
@@ -185,20 +247,85 @@ function App() {
       {forecast && (
         <div className="results">
           <h2>Forecast Results</h2>
+          
+          <div className="results-summary">
+            <p>
+              Based on <strong>{forecast.simulationCount || 10000} simulations</strong> using 
+              your team's historical throughput, here are the projected completion timeframes:
+            </p>
+          </div>
+
           <div className="stats-grid">
-            <div className="stat-card">
-              <div className="stat-label">P50 (Median)</div>
-              <div className="stat-value">{forecast.p50} weeks</div>
+            <div className="stat-card optimistic">
+              <div className="stat-label">
+                P50 (Median)
+                <HelpTooltip text="50% probability of completion by this date. Half of simulations finished earlier, half later." />
+              </div>
+              <div className="stat-value">{forecast.p50 || '--'}</div>
+              <div className="stat-unit">weeks</div>
+              <div className="stat-desc">Optimistic target</div>
             </div>
-            <div className="stat-card">
-              <div className="stat-label">P80</div>
-              <div className="stat-value">{forecast.p80} weeks</div>
+            <div className="stat-card recommended">
+              <div className="stat-label">
+                P80
+                <HelpTooltip text="80% probability of completion. This is a reasonable target for most planning purposes." />
+              </div>
+              <div className="stat-value">{forecast.p80 || '--'}</div>
+              <div className="stat-unit">weeks</div>
+              <div className="stat-desc">Recommended for planning</div>
             </div>
-            <div className="stat-card">
-              <div className="stat-label">P95</div>
-              <div className="stat-value">{forecast.p95} weeks</div>
+            <div className="stat-card conservative">
+              <div className="stat-label">
+                P95
+                <HelpTooltip text="95% probability of completion. Use this for high-stakes commitments where missing the deadline has serious consequences." />
+              </div>
+              <div className="stat-value">{forecast.p95 || '--'}</div>
+              <div className="stat-unit">weeks</div>
+              <div className="stat-desc">Conservative estimate</div>
             </div>
           </div>
+
+          {(forecast.throughput || forecast.remaining) && (
+            <div className="data-summary">
+              <h3>Data Summary</h3>
+              <div className="summary-grid">
+                {forecast.remaining !== undefined && (
+                  <div className="summary-item">
+                    <span className="summary-label">Remaining Items:</span>
+                    <span className="summary-value">{forecast.remaining}</span>
+                  </div>
+                )}
+                {forecast.throughput && (
+                  <div className="summary-item">
+                    <span className="summary-label">Avg Weekly Throughput:</span>
+                    <span className="summary-value">
+                      {typeof forecast.throughput === 'object' 
+                        ? (forecast.throughput.mean || forecast.throughput.avg || '--')
+                        : forecast.throughput} items/week
+                    </span>
+                  </div>
+                )}
+                {forecast.weeksAnalyzed && (
+                  <div className="summary-item">
+                    <span className="summary-label">Historical Data:</span>
+                    <span className="summary-value">{forecast.weeksAnalyzed} weeks</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          <InfoPanel title="How to use these results" collapsible={true}>
+            <ul>
+              <li><strong>For sprint planning:</strong> Use the P50 as an optimistic goal, but plan buffer time.</li>
+              <li><strong>For stakeholder communication:</strong> Communicate the P80 date as your target, with P95 as the outer bound.</li>
+              <li><strong>For contracts/commitments:</strong> Use P95 to minimize risk of missing deadlines.</li>
+            </ul>
+            <p className="info-note">
+              Remember: These forecasts assume current team capacity and scope remain constant. 
+              Re-run the forecast regularly as conditions change.
+            </p>
+          </InfoPanel>
         </div>
       )}
     </div>
