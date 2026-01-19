@@ -11,6 +11,7 @@
     "tunnel": "forge tunnel"
   },
   "dependencies": {
+    "@duckdb/duckdb-wasm": "1.33.1-dev18.0",
     "@forge/api": "^6.4.3",
     "@forge/bridge": "5.10.2",
     "@forge/react": "11.9.1",

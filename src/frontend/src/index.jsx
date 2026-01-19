@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react"
 import ReactDOM from "react-dom/client"
 import "./styles.css"
+import DataExplorer from "./DataExplorer"
 
 // ========== IMMEDIATE INITIALIZATION ==========
 console.log("[v0] ========== SCRIPT START ==========")
@@ -99,6 +100,8 @@ function App() {
   const [error, setError] = useState(null)
   const [bridgeStatus, setBridgeStatus] = useState("checking...")
   const [showMethodology, setShowMethodology] = useState(false)
+  const [showExplorer, setShowExplorer] = useState(false)
+  const [aggregateData, setAggregateData] = useState(null)
 
   useEffect(() => {
     console.log("[v0] App mounted")
@@ -148,6 +151,9 @@ function App() {
       if (!aggregateResult?.success) {
         throw new Error(aggregateResult?.error || "Aggregation failed")
       }
+
+      // Save aggregate data for explorer
+      setAggregateData(aggregateResult)
 
       const forecastResult = await invokeResolver("computeBaseline", {
         snapshotId: aggregateResult.snapshotId,
@@ -326,6 +332,24 @@ function App() {
               Re-run the forecast regularly as conditions change.
             </p>
           </InfoPanel>
+
+          <div className="explorer-toggle">
+            <button 
+              className="toggle-explorer-button"
+              onClick={() => setShowExplorer(!showExplorer)}
+            >
+              {showExplorer ? 'Hide Data Explorer' : 'Open Data Explorer'}
+            </button>
+            <span className="explorer-hint">Query your forecast data with SQL</span>
+          </div>
+
+          {showExplorer && (
+            <DataExplorer 
+              forecastData={forecast}
+              throughputData={aggregateData?.throughput}
+              simulationResults={forecast?.distribution}
+            />
+          )}
         </div>
       )}
     </div>

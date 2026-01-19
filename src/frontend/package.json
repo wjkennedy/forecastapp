@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "@forge/bridge": "5.10.2",
+    "@duckdb/duckdb-wasm": "^1.29.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "recharts": "^2.12.0"
