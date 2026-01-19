@@ -4,6 +4,7 @@ import { useState, useEffect } from "react"
 import ReactDOM from "react-dom/client"
 import "./styles.css"
 import DataExplorer from "./DataExplorer"
+import { SimulationProgress, useSimulation } from "./MonteCarloSimulation"
 
 // ========== IMMEDIATE INITIALIZATION ==========
 console.log("[v0] ========== SCRIPT START ==========")
@@ -102,6 +103,10 @@ function App() {
   const [showMethodology, setShowMethodology] = useState(false)
   const [showExplorer, setShowExplorer] = useState(false)
   const [aggregateData, setAggregateData] = useState(null)
+  const [simulationSamples, setSimulationSamples] = useState(10000)
+  
+  // Use client-side simulation with progress
+  const simulation = useSimulation()
 
   useEffect(() => {
     console.log("[v0] App mounted")
@@ -138,11 +143,13 @@ function App() {
 
   const runForecast = async () => {
     if (!selectedProject) return
-    console.log("[v0] runForecast for:", selectedProject)
     setLoading(true)
     setError(null)
+    setForecast(null)
+    simulation.reset()
 
     try {
+      // Step 1: Fetch and aggregate data from Jira
       const aggregateResult = await invokeResolver("fetchAndAggregate", {
         scopeType: "project",
         scopeParams: { projectKey: selectedProject },
@@ -152,24 +159,49 @@ function App() {
         throw new Error(aggregateResult?.error || "Aggregation failed")
       }
 
-      // Save aggregate data for explorer
       setAggregateData(aggregateResult)
 
-      const forecastResult = await invokeResolver("computeBaseline", {
-        snapshotId: aggregateResult.snapshotId,
-        throughput: aggregateResult.throughput,
-        remaining: aggregateResult.remaining,
+      // Step 2: Run Monte Carlo simulation client-side with progress
+      const throughputData = aggregateResult.throughput?.weeklyData || 
+                            aggregateResult.throughput?.pointsPerWeek?.map((p, i) => ({
+                              pointsCompleted: p,
+                              issuesCompleted: aggregateResult.throughput?.issuesPerWeek?.[i] || 0
+                            })) || []
+      
+      const remainingWork = aggregateResult.remaining?.totalPoints || 
+                           aggregateResult.remaining?.total_points ||
+                           aggregateResult.remaining?.issueCount ||
+                           aggregateResult.remaining?.issue_count || 0
+      
+      const useIssueCount = (aggregateResult.remaining?.totalPoints || aggregateResult.remaining?.total_points || 0) === 0
+
+      if (throughputData.length === 0) {
+        throw new Error("No historical throughput data available. Need at least one week of completed work.")
+      }
+
+      setLoading(false) // Stop loading indicator, simulation progress will take over
+
+      const forecastResult = await simulation.run(throughputData, remainingWork, {
+        samples: simulationSamples,
+        seed: aggregateResult.snapshotId || selectedProject,
+        useIssueCount,
+        batchSize: 500,
       })
 
       if (!forecastResult?.success) {
-        throw new Error(forecastResult?.error || "Forecast failed")
+        throw new Error(forecastResult?.error || "Simulation failed")
       }
 
-      setForecast(forecastResult)
+      // Enhance result with remaining work info
+      setForecast({
+        ...forecastResult,
+        remaining: remainingWork,
+        weeksAnalyzed: throughputData.length,
+        throughput: forecastResult.throughputStats,
+        useIssueCount,
+      })
     } catch (err) {
-      console.error("[v0] runForecast error:", err)
       setError(err.message || "Failed to compute forecast")
-    } finally {
       setLoading(false)
     }
   }
@@ -239,10 +271,39 @@ function App() {
           </span>
         </div>
 
-        <button onClick={runForecast} disabled={loading || !selectedProject} className="run-button">
-          {loading ? "Running simulation..." : "Run Forecast"}
+        <div className="control-group">
+          <label htmlFor="sample-count">
+            Simulation Samples
+            <HelpTooltip text="More samples = more accurate results but longer runtime. 10,000 is recommended." />
+          </label>
+          <select
+            id="sample-count"
+            value={simulationSamples}
+            onChange={(e) => setSimulationSamples(Number(e.target.value))}
+            disabled={loading || simulation.isRunning}
+          >
+            <option value={1000}>1,000 (fast)</option>
+            <option value={5000}>5,000 (balanced)</option>
+            <option value={10000}>10,000 (recommended)</option>
+            <option value={25000}>25,000 (high accuracy)</option>
+            <option value={50000}>50,000 (very high)</option>
+          </select>
+        </div>
+
+        <button 
+          onClick={runForecast} 
+          disabled={loading || simulation.isRunning || !selectedProject} 
+          className="run-button"
+        >
+          {loading ? "Fetching data..." : simulation.isRunning ? "Simulating..." : "Run Forecast"}
         </button>
       </div>
+
+      {/* Simulation Progress */}
+      <SimulationProgress 
+        progress={simulation.progress} 
+        isRunning={simulation.isRunning} 
+      />
 
       {error && (
         <div className="error">
