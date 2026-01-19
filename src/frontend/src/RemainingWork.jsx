@@ -46,12 +46,31 @@ function calculateSchedule(issues, forecast, avgThroughput) {
 }
 
 /**
- * Format date for display
+ * Format date for display - handles both Date objects and strings
  */
-function formatDate(dateStr) {
-  if (!dateStr) return '--';
-  const date = new Date(dateStr);
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+function formatDate(input) {
+  if (!input) return '--';
+  try {
+    const date = input instanceof Date ? input : new Date(input);
+    if (isNaN(date.getTime())) return '--';
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  } catch {
+    return '--';
+  }
+}
+
+/**
+ * Calculate future date from today + weeks
+ */
+function getDateFromWeek(weekNumber) {
+  try {
+    const today = new Date();
+    const futureDate = new Date(today.getTime() + (weekNumber * 7 * 24 * 60 * 60 * 1000));
+    if (isNaN(futureDate.getTime())) return null;
+    return futureDate;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -277,7 +296,7 @@ export function RemainingWork({ remaining, forecast, throughput }) {
                 <div className="week-info">
                   <span className="week-number">Week {group.week}</span>
                   <span className="week-date">
-                    {formatDate(new Date(Date.now() + group.week * 7 * 24 * 60 * 60 * 1000).toISOString())}
+                    {formatDate(getDateFromWeek(group.week))}
                   </span>
                 </div>
                 <div className="week-stats">
