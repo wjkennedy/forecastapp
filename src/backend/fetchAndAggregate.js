@@ -35,7 +35,11 @@ export async function handler(req) {
     // 5. Get team summary
     const teamSummary = computeTeamSummary(issues);
     
-    // 6. Generate snapshot ID
+    // 6. Compute estimation accuracy from completed issues
+    const estimationAccuracy = computeEstimationAccuracy(issues);
+    console.log('Estimation accuracy computed:', estimationAccuracy.sampleSize, 'issues analyzed');
+    
+    // 7. Generate snapshot ID
     const snapshotId = generateSnapshotId(issues);
     
     const elapsed = Date.now() - startTime;
@@ -47,6 +51,7 @@ export async function handler(req) {
       throughput,
       remaining,
       teamSummary,
+      estimationAccuracy,
       issueCount: issues.length,
       executionTime: elapsed
     };
@@ -320,6 +325,239 @@ function deriveTeam(fields) {
   if (assignee.includes('Data')) return 'data';
   
   return 'default';
+}
+
+/**
+ * Compute estimation accuracy by comparing story points to actual cycle time
+ * This helps identify systematic under/overestimation patterns
+ */
+function computeEstimationAccuracy(issues) {
+  const now = new Date();
+  const weeksAgo = 12; // Analyze last 12 weeks of completed work
+  const cutoffDate = new Date(now.getTime() - (weeksAgo * 7 * 24 * 60 * 60 * 1000));
+  
+  // Filter completed issues with both estimates and resolution dates
+  const completedWithEstimates = issues.filter(issue => {
+    if (issue.statusCategory !== 'Done') return false;
+    if (!issue.resolved || !issue.created) return false;
+    if (!issue.storyPoints || issue.storyPoints <= 0) return false;
+    const resolvedDate = new Date(issue.resolved);
+    return resolvedDate >= cutoffDate;
+  });
+  
+  if (completedWithEstimates.length < 3) {
+    return {
+      sampleSize: completedWithEstimates.length,
+      insufficient: true,
+      message: 'Need at least 3 completed issues with estimates to analyze accuracy'
+    };
+  }
+  
+  // Calculate cycle time (days from created to resolved) for each issue
+  const issueMetrics = completedWithEstimates.map(issue => {
+    const created = new Date(issue.created);
+    const resolved = new Date(issue.resolved);
+    const cycleTimeDays = (resolved - created) / (1000 * 60 * 60 * 24);
+    const daysPerPoint = cycleTimeDays / issue.storyPoints;
+    
+    return {
+      key: issue.key,
+      summary: issue.summary,
+      issueType: issue.issueType,
+      storyPoints: issue.storyPoints,
+      cycleTimeDays: Math.round(cycleTimeDays * 10) / 10,
+      daysPerPoint: Math.round(daysPerPoint * 10) / 10
+    };
+  });
+  
+  // Group by story point value to find patterns
+  const byPointValue = new Map();
+  for (const metric of issueMetrics) {
+    const points = metric.storyPoints;
+    if (!byPointValue.has(points)) {
+      byPointValue.set(points, []);
+    }
+    byPointValue.get(points).push(metric);
+  }
+  
+  // Calculate stats for each point value
+  const pointValueStats = [];
+  for (const [points, metrics] of byPointValue) {
+    const cycleTimes = metrics.map(m => m.cycleTimeDays);
+    const avgCycleTime = cycleTimes.reduce((a, b) => a + b, 0) / cycleTimes.length;
+    const daysPerPointValues = metrics.map(m => m.daysPerPoint);
+    const avgDaysPerPoint = daysPerPointValues.reduce((a, b) => a + b, 0) / daysPerPointValues.length;
+    
+    // Calculate standard deviation for variability
+    const variance = cycleTimes.reduce((sum, ct) => sum + Math.pow(ct - avgCycleTime, 2), 0) / cycleTimes.length;
+    const stdDev = Math.sqrt(variance);
+    const coefficientOfVariation = avgCycleTime > 0 ? (stdDev / avgCycleTime) * 100 : 0;
+    
+    pointValueStats.push({
+      storyPoints: points,
+      count: metrics.length,
+      avgCycleTimeDays: Math.round(avgCycleTime * 10) / 10,
+      minCycleTime: Math.round(Math.min(...cycleTimes) * 10) / 10,
+      maxCycleTime: Math.round(Math.max(...cycleTimes) * 10) / 10,
+      avgDaysPerPoint: Math.round(avgDaysPerPoint * 10) / 10,
+      variability: Math.round(coefficientOfVariation), // % variability
+      issues: metrics.slice(0, 5) // Sample of issues for reference
+    });
+  }
+  
+  // Sort by story points ascending
+  pointValueStats.sort((a, b) => a.storyPoints - b.storyPoints);
+  
+  // Calculate overall metrics
+  const allDaysPerPoint = issueMetrics.map(m => m.daysPerPoint);
+  const overallAvgDaysPerPoint = allDaysPerPoint.reduce((a, b) => a + b, 0) / allDaysPerPoint.length;
+  
+  // Detect estimation bias by comparing expected vs actual ratios
+  // If 2-point stories take the same time as 5-point stories, there's a problem
+  const estimationBias = detectEstimationBias(pointValueStats);
+  
+  // Generate recommendations
+  const recommendations = generateEstimationRecommendations(pointValueStats, estimationBias, overallAvgDaysPerPoint);
+  
+  return {
+    sampleSize: completedWithEstimates.length,
+    insufficient: false,
+    overallAvgDaysPerPoint: Math.round(overallAvgDaysPerPoint * 10) / 10,
+    byPointValue: pointValueStats,
+    estimationBias,
+    recommendations,
+    // Include raw metrics for the data explorer
+    issueMetrics: issueMetrics.slice(0, 50) // Limit to 50 for payload size
+  };
+}
+
+/**
+ * Detect if story point estimates correlate with actual effort
+ */
+function detectEstimationBias(pointValueStats) {
+  if (pointValueStats.length < 2) {
+    return { type: 'insufficient_data', message: 'Need multiple point values to detect bias' };
+  }
+  
+  // Check if higher point values actually take proportionally longer
+  const sortedByPoints = [...pointValueStats].sort((a, b) => a.storyPoints - b.storyPoints);
+  
+  let linearityScore = 0;
+  let comparisons = 0;
+  
+  for (let i = 0; i < sortedByPoints.length - 1; i++) {
+    const lower = sortedByPoints[i];
+    const higher = sortedByPoints[i + 1];
+    
+    // Expected ratio of cycle times based on point ratio
+    const pointRatio = higher.storyPoints / lower.storyPoints;
+    const actualTimeRatio = higher.avgCycleTimeDays / lower.avgCycleTimeDays;
+    
+    // How close is actual to expected? (1.0 = perfect correlation)
+    const accuracy = actualTimeRatio / pointRatio;
+    linearityScore += accuracy;
+    comparisons++;
+  }
+  
+  const avgLinearity = comparisons > 0 ? linearityScore / comparisons : 1;
+  
+  // Classify the bias
+  if (avgLinearity < 0.5) {
+    return {
+      type: 'severe_overestimation',
+      score: Math.round(avgLinearity * 100),
+      message: 'Larger estimates take much less time than expected. Consider using smaller point values.'
+    };
+  } else if (avgLinearity < 0.8) {
+    return {
+      type: 'moderate_overestimation', 
+      score: Math.round(avgLinearity * 100),
+      message: 'Larger stories are being overestimated relative to smaller ones.'
+    };
+  } else if (avgLinearity > 1.5) {
+    return {
+      type: 'severe_underestimation',
+      score: Math.round(avgLinearity * 100),
+      message: 'Larger estimates take much more time than expected. Stories may need to be broken down more.'
+    };
+  } else if (avgLinearity > 1.2) {
+    return {
+      type: 'moderate_underestimation',
+      score: Math.round(avgLinearity * 100),
+      message: 'Larger stories are being underestimated relative to smaller ones.'
+    };
+  } else {
+    return {
+      type: 'well_calibrated',
+      score: Math.round(avgLinearity * 100),
+      message: 'Story point estimates correlate well with actual effort.'
+    };
+  }
+}
+
+/**
+ * Generate actionable recommendations based on estimation patterns
+ */
+function generateEstimationRecommendations(pointValueStats, bias, avgDaysPerPoint) {
+  const recommendations = [];
+  
+  // High variability warnings
+  const highVariabilityPoints = pointValueStats.filter(p => p.variability > 50 && p.count >= 3);
+  if (highVariabilityPoints.length > 0) {
+    const pointValues = highVariabilityPoints.map(p => p.storyPoints).join(', ');
+    recommendations.push({
+      type: 'high_variability',
+      priority: 'high',
+      title: 'Inconsistent estimates detected',
+      detail: `${pointValues}-point stories have high variability (>50% spread). Consider breaking these down or refining estimation criteria.`,
+      affectedPoints: highVariabilityPoints.map(p => p.storyPoints)
+    });
+  }
+  
+  // Estimation bias recommendations
+  if (bias.type === 'severe_underestimation' || bias.type === 'moderate_underestimation') {
+    recommendations.push({
+      type: 'underestimation',
+      priority: bias.type === 'severe_underestimation' ? 'high' : 'medium',
+      title: 'Systematic underestimation',
+      detail: `Larger stories consistently take longer than estimates suggest. Apply a ${Math.round((bias.score - 100) / 10) * 10}% buffer to estimates above 3 points.`,
+      suggestedMultiplier: Math.round(bias.score) / 100
+    });
+  }
+  
+  if (bias.type === 'severe_overestimation' || bias.type === 'moderate_overestimation') {
+    recommendations.push({
+      type: 'overestimation',
+      priority: bias.type === 'severe_overestimation' ? 'high' : 'medium',
+      title: 'Systematic overestimation',
+      detail: `Larger stories complete faster than estimates suggest. Your team may be padding estimates or the work is getting done more efficiently than expected.`
+    });
+  }
+  
+  // Point value-specific recommendations
+  for (const stat of pointValueStats) {
+    if (stat.count >= 3 && stat.avgDaysPerPoint > avgDaysPerPoint * 1.5) {
+      recommendations.push({
+        type: 'slow_point_value',
+        priority: 'medium',
+        title: `${stat.storyPoints}-point stories take longer per point`,
+        detail: `At ${stat.avgDaysPerPoint} days/point vs ${Math.round(avgDaysPerPoint * 10) / 10} average, consider if these need to be sized higher or broken down.`,
+        affectedPoints: [stat.storyPoints]
+      });
+    }
+  }
+  
+  // General calibration suggestion
+  if (recommendations.length === 0 && bias.type === 'well_calibrated') {
+    recommendations.push({
+      type: 'well_calibrated',
+      priority: 'info',
+      title: 'Estimates are well calibrated',
+      detail: `Your team averages ${Math.round(avgDaysPerPoint * 10) / 10} days per story point with good correlation between estimates and actual effort.`
+    });
+  }
+  
+  return recommendations;
 }
 
 /**

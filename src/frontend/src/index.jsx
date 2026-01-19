@@ -6,6 +6,7 @@ import "./styles.css"
 import DataExplorer from "./DataExplorer"
 import { SimulationProgress, useSimulation } from "./MonteCarloSimulation"
 import RemainingWork from "./RemainingWork"
+import EstimationInsights from "./EstimationInsights"
 
 // ========== IMMEDIATE INITIALIZATION ==========
 console.log("[v0] ========== SCRIPT START ==========")
@@ -399,6 +400,12 @@ function App() {
           <RemainingWork 
             remaining={aggregateData?.remaining}
             forecast={forecast}
+            throughput={aggregateData?.throughput}
+          />
+
+          {/* Estimation Accuracy Insights */}
+          <EstimationInsights 
+            estimationAccuracy={aggregateData?.estimationAccuracy}
             throughput={aggregateData?.throughput}
           />
 
