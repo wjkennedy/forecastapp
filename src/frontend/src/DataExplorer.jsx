@@ -1,13 +1,156 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import useDuckDB from './useDuckDB';
+import { useState, useCallback, useMemo } from 'react';
 
 /**
- * SQL Editor component for querying forecast data
+ * Simple in-memory query engine using JavaScript
+ * Supports basic SQL-like operations without DuckDB workers
  */
-function SQLEditor({ onExecute, disabled }) {
-  const [sql, setSql] = useState('SELECT * FROM forecast_data LIMIT 10');
+class SimpleQueryEngine {
+  constructor() {
+    this.tables = new Map();
+  }
+
+  registerTable(name, data) {
+    this.tables.set(name.toLowerCase(), Array.isArray(data) ? data : [data]);
+  }
+
+  query(sql) {
+    const normalizedSql = sql.trim().toLowerCase();
+    
+    // Parse SELECT ... FROM table [WHERE ...] [ORDER BY ...] [LIMIT n]
+    const selectMatch = normalizedSql.match(/select\s+(.+?)\s+from\s+(\w+)(?:\s+where\s+(.+?))?(?:\s+order\s+by\s+(.+?))?(?:\s+limit\s+(\d+))?$/i);
+    
+    if (!selectMatch) {
+      // Handle UNION queries
+      if (normalizedSql.includes('union')) {
+        return this.handleUnion(sql);
+      }
+      throw new Error('Unsupported query format. Use: SELECT columns FROM table [WHERE condition] [ORDER BY column] [LIMIT n]');
+    }
+
+    const [, columns, tableName, whereClause, orderBy, limit] = selectMatch;
+    
+    const table = this.tables.get(tableName.toLowerCase());
+    if (!table) {
+      throw new Error(`Table '${tableName}' not found. Available: ${Array.from(this.tables.keys()).join(', ')}`);
+    }
+
+    let results = [...table];
+
+    // Apply WHERE
+    if (whereClause) {
+      results = this.applyWhere(results, whereClause);
+    }
+
+    // Apply ORDER BY
+    if (orderBy) {
+      results = this.applyOrderBy(results, orderBy);
+    }
+
+    // Apply LIMIT
+    if (limit) {
+      results = results.slice(0, parseInt(limit, 10));
+    }
+
+    // Apply SELECT (column selection)
+    results = this.applySelect(results, columns);
+
+    return results;
+  }
+
+  handleUnion(sql) {
+    const parts = sql.split(/\bunion\s+all\b|\bunion\b/i);
+    let allResults = [];
+    
+    for (const part of parts) {
+      const trimmed = part.trim();
+      if (trimmed) {
+        const partResults = this.query(trimmed);
+        allResults = allResults.concat(partResults);
+      }
+    }
+    
+    return allResults;
+  }
+
+  applyWhere(rows, whereClause) {
+    // Simple WHERE parsing: column = value, column > value, etc.
+    const conditions = whereClause.split(/\s+and\s+/i);
+    
+    return rows.filter(row => {
+      return conditions.every(condition => {
+        const match = condition.match(/(\w+)\s*(=|!=|>|<|>=|<=|like)\s*['"]?([^'"]+)['"]?/i);
+        if (!match) return true;
+        
+        const [, col, op, val] = match;
+        const rowVal = row[col] ?? row[col.toLowerCase()];
+        const compareVal = isNaN(val) ? val : Number(val);
+        
+        switch (op.toLowerCase()) {
+          case '=': return rowVal == compareVal;
+          case '!=': return rowVal != compareVal;
+          case '>': return rowVal > compareVal;
+          case '<': return rowVal < compareVal;
+          case '>=': return rowVal >= compareVal;
+          case '<=': return rowVal <= compareVal;
+          case 'like': return String(rowVal).toLowerCase().includes(String(compareVal).toLowerCase().replace(/%/g, ''));
+          default: return true;
+        }
+      });
+    });
+  }
+
+  applyOrderBy(rows, orderBy) {
+    const [col, direction] = orderBy.trim().split(/\s+/);
+    const desc = direction?.toLowerCase() === 'desc';
+    
+    return rows.sort((a, b) => {
+      const aVal = a[col] ?? a[col.toLowerCase()];
+      const bVal = b[col] ?? b[col.toLowerCase()];
+      
+      if (aVal < bVal) return desc ? 1 : -1;
+      if (aVal > bVal) return desc ? -1 : 1;
+      return 0;
+    });
+  }
+
+  applySelect(rows, columns) {
+    if (columns.trim() === '*') {
+      return rows;
+    }
+
+    const cols = columns.split(',').map(c => {
+      const aliasMatch = c.trim().match(/(.+?)\s+as\s+(\w+)/i);
+      if (aliasMatch) {
+        return { expr: aliasMatch[1].trim(), alias: aliasMatch[2].trim() };
+      }
+      return { expr: c.trim(), alias: c.trim() };
+    });
+
+    return rows.map(row => {
+      const result = {};
+      for (const { expr, alias } of cols) {
+        // Handle simple column references
+        if (row.hasOwnProperty(expr)) {
+          result[alias] = row[expr];
+        } else if (row.hasOwnProperty(expr.toLowerCase())) {
+          result[alias] = row[expr.toLowerCase()];
+        } else {
+          // Handle expressions like COUNT(*), SUM(col), etc. - just return the value
+          result[alias] = expr;
+        }
+      }
+      return result;
+    });
+  }
+}
+
+/**
+ * SQL Editor component
+ */
+function SQLEditor({ onExecute, disabled, defaultSql }) {
+  const [sql, setSql] = useState(defaultSql || 'SELECT * FROM forecast LIMIT 10');
   
   const handleKeyDown = (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
@@ -19,7 +162,7 @@ function SQLEditor({ onExecute, disabled }) {
   return (
     <div className="sql-editor">
       <div className="sql-editor-header">
-        <span className="sql-label">SQL Query</span>
+        <span className="sql-label">Query</span>
         <span className="sql-hint">Cmd/Ctrl + Enter to run</span>
       </div>
       <textarea
@@ -27,9 +170,10 @@ function SQLEditor({ onExecute, disabled }) {
         value={sql}
         onChange={(e) => setSql(e.target.value)}
         onKeyDown={handleKeyDown}
-        placeholder="Enter SQL query..."
+        placeholder="Enter query..."
         disabled={disabled}
         spellCheck={false}
+        rows={4}
       />
       <button 
         className="sql-run-button"
@@ -45,19 +189,19 @@ function SQLEditor({ onExecute, disabled }) {
 /**
  * Results table component
  */
-function ResultsTable({ data, columns }) {
+function ResultsTable({ data }) {
   if (!data || data.length === 0) {
     return <div className="results-empty">No results</div>;
   }
 
-  const cols = columns || Object.keys(data[0] || {});
+  const columns = Object.keys(data[0] || {});
 
   return (
     <div className="results-table-container">
       <table className="results-table">
         <thead>
           <tr>
-            {cols.map(col => (
+            {columns.map(col => (
               <th key={col}>{col}</th>
             ))}
           </tr>
@@ -65,11 +209,11 @@ function ResultsTable({ data, columns }) {
         <tbody>
           {data.map((row, i) => (
             <tr key={i}>
-              {cols.map(col => (
+              {columns.map(col => (
                 <td key={col}>
                   {typeof row[col] === 'object' 
                     ? JSON.stringify(row[col]) 
-                    : String(row[col] ?? '')}
+                    : row[col]?.toFixed ? row[col].toFixed(2) : String(row[col] ?? '')}
                 </td>
               ))}
             </tr>
@@ -86,40 +230,20 @@ function ResultsTable({ data, columns }) {
 function QueryTemplates({ onSelect }) {
   const templates = [
     {
-      name: 'All Forecast Data',
-      sql: 'SELECT * FROM forecast_data LIMIT 100'
+      name: 'Forecast Summary',
+      sql: 'SELECT * FROM forecast LIMIT 1'
     },
     {
-      name: 'Throughput by Week',
-      sql: `SELECT 
-  week_start,
-  issues_completed,
-  points_completed
-FROM throughput_data
-ORDER BY week_start`
+      name: 'Weekly Throughput',
+      sql: 'SELECT * FROM throughput ORDER BY weekStart'
     },
     {
-      name: 'Completion Distribution',
-      sql: `SELECT 
-  weeks,
-  COUNT(*) as simulations,
-  ROUND(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER(), 2) as percentage
-FROM simulation_results
-GROUP BY weeks
-ORDER BY weeks`
+      name: 'Top 10 Weeks',
+      sql: 'SELECT * FROM throughput ORDER BY pointsCompleted DESC LIMIT 10'
     },
     {
-      name: 'Summary Statistics',
-      sql: `SELECT 
-  'Remaining Issues' as metric, remaining_issues as value FROM summary
-UNION ALL
-SELECT 'Remaining Points', remaining_points FROM summary
-UNION ALL
-SELECT 'P50 Weeks', p50_weeks FROM summary
-UNION ALL
-SELECT 'P80 Weeks', p80_weeks FROM summary
-UNION ALL
-SELECT 'P95 Weeks', p95_weeks FROM summary`
+      name: 'Simulation Stats',
+      sql: 'SELECT * FROM simulation LIMIT 20'
     }
   ];
 
@@ -143,104 +267,79 @@ SELECT 'P95 Weeks', p95_weeks FROM summary`
 }
 
 /**
- * Data Explorer - DuckDB-powered SQL interface
+ * Data Explorer - JavaScript-powered query interface
+ * Works within Forge CSP without web workers
  */
 export function DataExplorer({ forecastData, throughputData, simulationResults }) {
-  const { loading, error, query, registerJSON, isReady } = useDuckDB();
   const [results, setResults] = useState(null);
   const [queryError, setQueryError] = useState(null);
   const [queryTime, setQueryTime] = useState(null);
-  const [dataLoaded, setDataLoaded] = useState(false);
+  const [currentSql, setCurrentSql] = useState('SELECT * FROM forecast LIMIT 10');
 
-  // Load forecast data into DuckDB when available
-  useEffect(() => {
-    if (!isReady || dataLoaded) return;
+  // Initialize query engine with data
+  const queryEngine = useMemo(() => {
+    const engine = new SimpleQueryEngine();
+    
+    // Register forecast data
+    if (forecastData) {
+      engine.registerTable('forecast', {
+        p50: forecastData.p50,
+        p80: forecastData.p80,
+        p95: forecastData.p95,
+        remainingWork: forecastData.remaining || forecastData.remainingWork,
+        weeksAnalyzed: forecastData.weeksAnalyzed,
+        avgThroughput: forecastData.throughput?.mean || forecastData.throughputStats?.mean,
+        simulationCount: forecastData.simulationCount || 10000
+      });
+    }
+    
+    // Register throughput data
+    if (throughputData?.weeklyData) {
+      engine.registerTable('throughput', throughputData.weeklyData);
+    } else if (throughputData?.pointsPerWeek) {
+      const data = throughputData.pointsPerWeek.map((points, i) => ({
+        week: i + 1,
+        pointsCompleted: points,
+        issuesCompleted: throughputData.issuesPerWeek?.[i] || 0
+      }));
+      engine.registerTable('throughput', data);
+    }
+    
+    // Register simulation distribution if available
+    if (simulationResults && Array.isArray(simulationResults)) {
+      engine.registerTable('simulation', simulationResults);
+    } else if (forecastData?.distribution) {
+      engine.registerTable('simulation', forecastData.distribution);
+    }
 
-    const loadAllData = async () => {
-      try {
-        console.log('[DataExplorer] Loading data into DuckDB...');
-        
-        // Register forecast data
-        if (forecastData) {
-          await registerJSON('forecast_data', Array.isArray(forecastData) ? forecastData : [forecastData]);
-        }
-        
-        // Register throughput data
-        if (throughputData?.weeklyData) {
-          await registerJSON('throughput_data', throughputData.weeklyData);
-        }
-        
-        // Register simulation results if available
-        if (simulationResults) {
-          await registerJSON('simulation_results', simulationResults);
-        }
+    return engine;
+  }, [forecastData, throughputData, simulationResults]);
 
-        // Create summary table
-        if (forecastData) {
-          const summary = [{
-            remaining_issues: forecastData.remainingIssues || 0,
-            remaining_points: forecastData.remainingWork || 0,
-            p50_weeks: forecastData.p50 || 0,
-            p80_weeks: forecastData.p80 || 0,
-            p95_weeks: forecastData.p95 || 0,
-            weeks_analyzed: forecastData.weeksAnalyzed || 0
-          }];
-          await registerJSON('summary', summary);
-        }
-
-        setDataLoaded(true);
-        console.log('[DataExplorer] Data loaded successfully');
-      } catch (err) {
-        console.error('[DataExplorer] Failed to load data:', err);
-        setQueryError('Failed to load data: ' + err.message);
-      }
-    };
-
-    loadAllData();
-  }, [isReady, forecastData, throughputData, simulationResults, registerJSON, dataLoaded]);
-
-  // Execute SQL query
-  const executeQuery = useCallback(async (sql) => {
+  // Execute query
+  const executeQuery = useCallback((sql) => {
     setQueryError(null);
     setResults(null);
+    setCurrentSql(sql);
     
     const startTime = performance.now();
     
     try {
-      // Handle JSON file references
-      let processedSql = sql;
-      
-      // Replace table references with read_json_auto for our registered files
-      const tables = ['forecast_data', 'throughput_data', 'simulation_results', 'summary'];
-      for (const table of tables) {
-        const regex = new RegExp(`\\b${table}\\b`, 'gi');
-        processedSql = processedSql.replace(regex, `read_json_auto('${table}.json')`);
-      }
-      
-      const rows = await query(processedSql);
+      const rows = queryEngine.query(sql);
       const elapsed = performance.now() - startTime;
       
       setResults(rows);
       setQueryTime(elapsed.toFixed(2));
     } catch (err) {
-      console.error('[DataExplorer] Query error:', err);
       setQueryError(err.message);
     }
-  }, [query]);
+  }, [queryEngine]);
 
-  if (loading) {
+  const hasData = forecastData || throughputData;
+
+  if (!hasData) {
     return (
       <div className="data-explorer loading">
-        <div className="loading-spinner"></div>
-        <p>Initializing DuckDB...</p>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="data-explorer error">
-        <p>Failed to initialize DuckDB: {error}</p>
+        <p>Run a forecast first to explore the data</p>
       </div>
     );
   }
@@ -249,31 +348,34 @@ export function DataExplorer({ forecastData, throughputData, simulationResults }
     <div className="data-explorer">
       <div className="explorer-header">
         <h3>Data Explorer</h3>
-        <span className="duckdb-badge">Powered by DuckDB-WASM</span>
+        <span className="duckdb-badge">In-Memory Query Engine</span>
       </div>
       
       <div className="explorer-content">
         <div className="explorer-sidebar">
           <QueryTemplates onSelect={(sql) => {
-            document.querySelector('.sql-textarea').value = sql;
+            setCurrentSql(sql);
             executeQuery(sql);
           }} />
           
           <div className="available-tables">
             <h4>Available Tables</h4>
             <ul>
-              <li><code>forecast_data</code> - Forecast results</li>
-              <li><code>throughput_data</code> - Weekly throughput</li>
-              <li><code>simulation_results</code> - Monte Carlo results</li>
-              <li><code>summary</code> - Summary statistics</li>
+              <li><code>forecast</code> - P50/P80/P95 results</li>
+              <li><code>throughput</code> - Weekly velocity</li>
+              <li><code>simulation</code> - Distribution data</li>
             </ul>
+            <p className="table-hint">
+              Supports: SELECT, WHERE, ORDER BY, LIMIT
+            </p>
           </div>
         </div>
         
         <div className="explorer-main">
           <SQLEditor 
             onExecute={executeQuery}
-            disabled={!dataLoaded}
+            disabled={false}
+            defaultSql={currentSql}
           />
           
           {queryError && (
