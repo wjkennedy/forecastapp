@@ -149,9 +149,7 @@ class SimpleQueryEngine {
 /**
  * SQL Editor component
  */
-function SQLEditor({ onExecute, disabled, defaultSql }) {
-  const [sql, setSql] = useState(defaultSql || 'SELECT * FROM forecast LIMIT 10');
-  
+function SQLEditor({ onExecute, disabled, sql, onSqlChange }) {
   const handleKeyDown = (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
       e.preventDefault();
@@ -162,15 +160,15 @@ function SQLEditor({ onExecute, disabled, defaultSql }) {
   return (
     <div className="sql-editor">
       <div className="sql-editor-header">
-        <span className="sql-label">Query</span>
+        <span className="sql-label">SQL Query</span>
         <span className="sql-hint">Cmd/Ctrl + Enter to run</span>
       </div>
       <textarea
         className="sql-textarea"
         value={sql}
-        onChange={(e) => setSql(e.target.value)}
+        onChange={(e) => onSqlChange(e.target.value)}
         onKeyDown={handleKeyDown}
-        placeholder="Enter query..."
+        placeholder="Enter SQL query..."
         disabled={disabled}
         spellCheck={false}
         rows={4}
@@ -225,40 +223,50 @@ function ResultsTable({ data }) {
 }
 
 /**
- * Predefined queries panel
+ * Predefined queries panel - shows query syntax when selected
  */
-function QueryTemplates({ onSelect }) {
+function QueryTemplates({ onSelect, currentSql }) {
   const templates = [
     {
       name: 'Forecast Summary',
+      description: 'View P50/P80/P95 completion estimates',
       sql: 'SELECT * FROM forecast LIMIT 1'
     },
     {
       name: 'Weekly Throughput',
+      description: 'All historical throughput data',
       sql: 'SELECT * FROM throughput ORDER BY weekStart'
     },
     {
-      name: 'Top 10 Weeks',
+      name: 'Best Weeks',
+      description: 'Top performing weeks by points',
       sql: 'SELECT * FROM throughput ORDER BY pointsCompleted DESC LIMIT 10'
     },
     {
-      name: 'Simulation Stats',
-      sql: 'SELECT * FROM simulation LIMIT 20'
+      name: 'Low Throughput Weeks',
+      description: 'Weeks with lowest output',
+      sql: 'SELECT * FROM throughput ORDER BY pointsCompleted ASC LIMIT 5'
+    },
+    {
+      name: 'Simulation Distribution',
+      description: 'Monte Carlo simulation results',
+      sql: 'SELECT * FROM simulation LIMIT 25'
     }
   ];
 
   return (
     <div className="query-templates">
       <h4>Quick Queries</h4>
+      <p className="templates-hint">Click to load query into editor</p>
       <div className="templates-list">
         {templates.map((t, i) => (
           <button 
             key={i}
-            className="template-button"
+            className={`template-button ${currentSql === t.sql ? 'active' : ''}`}
             onClick={() => onSelect(t.sql)}
-            title={t.sql}
           >
-            {t.name}
+            <span className="template-name">{t.name}</span>
+            <span className="template-desc">{t.description}</span>
           </button>
         ))}
       </div>
@@ -274,7 +282,32 @@ export function DataExplorer({ forecastData, throughputData, simulationResults }
   const [results, setResults] = useState(null);
   const [queryError, setQueryError] = useState(null);
   const [queryTime, setQueryTime] = useState(null);
-  const [currentSql, setCurrentSql] = useState('SELECT * FROM forecast LIMIT 10');
+  const [currentSql, setCurrentSql] = useState('SELECT * FROM forecast LIMIT 1');
+
+  // Calculate data availability for context display
+  const dataContext = useMemo(() => {
+    const context = {
+      hasForecast: Boolean(forecastData),
+      hasThroughput: Boolean(throughputData?.weeklyData || throughputData?.pointsPerWeek),
+      hasSimulation: Boolean(simulationResults || forecastData?.distribution),
+      throughputWeeks: 0,
+      simulationSamples: 0
+    };
+    
+    if (throughputData?.weeklyData) {
+      context.throughputWeeks = throughputData.weeklyData.length;
+    } else if (throughputData?.pointsPerWeek) {
+      context.throughputWeeks = throughputData.pointsPerWeek.length;
+    }
+    
+    if (simulationResults?.length) {
+      context.simulationSamples = simulationResults.length;
+    } else if (forecastData?.distribution?.length) {
+      context.simulationSamples = forecastData.distribution.length;
+    }
+    
+    return context;
+  }, [forecastData, throughputData, simulationResults]);
 
   // Initialize query engine with data
   const queryEngine = useMemo(() => {
@@ -283,13 +316,14 @@ export function DataExplorer({ forecastData, throughputData, simulationResults }
     // Register forecast data
     if (forecastData) {
       engine.registerTable('forecast', {
-        p50: forecastData.p50,
-        p80: forecastData.p80,
-        p95: forecastData.p95,
-        remainingWork: forecastData.remaining || forecastData.remainingWork,
-        weeksAnalyzed: forecastData.weeksAnalyzed,
-        avgThroughput: forecastData.throughput?.mean || forecastData.throughputStats?.mean,
-        simulationCount: forecastData.simulationCount || 10000
+        p50_weeks: forecastData.p50,
+        p80_weeks: forecastData.p80,
+        p95_weeks: forecastData.p95,
+        remaining_work: forecastData.remaining || forecastData.remainingWork,
+        weeks_analyzed: forecastData.weeksAnalyzed,
+        avg_throughput: forecastData.throughput?.mean || forecastData.throughputStats?.mean,
+        simulation_count: forecastData.simulationCount || 10000,
+        use_issue_count: forecastData.useIssueCount || false
       });
     }
     
@@ -298,7 +332,8 @@ export function DataExplorer({ forecastData, throughputData, simulationResults }
       engine.registerTable('throughput', throughputData.weeklyData);
     } else if (throughputData?.pointsPerWeek) {
       const data = throughputData.pointsPerWeek.map((points, i) => ({
-        week: i + 1,
+        week_number: i + 1,
+        weekStart: throughputData.weeklyData?.[i]?.weekStart || `Week ${i + 1}`,
         pointsCompleted: points,
         issuesCompleted: throughputData.issuesPerWeek?.[i] || 0
       }));
@@ -319,7 +354,6 @@ export function DataExplorer({ forecastData, throughputData, simulationResults }
   const executeQuery = useCallback((sql) => {
     setQueryError(null);
     setResults(null);
-    setCurrentSql(sql);
     
     const startTime = performance.now();
     
@@ -333,6 +367,12 @@ export function DataExplorer({ forecastData, throughputData, simulationResults }
       setQueryError(err.message);
     }
   }, [queryEngine]);
+
+  // Handle template selection - update SQL in editor
+  const handleTemplateSelect = useCallback((sql) => {
+    setCurrentSql(sql);
+    executeQuery(sql);
+  }, [executeQuery]);
 
   const hasData = forecastData || throughputData;
 
@@ -348,26 +388,71 @@ export function DataExplorer({ forecastData, throughputData, simulationResults }
     <div className="data-explorer">
       <div className="explorer-header">
         <h3>Data Explorer</h3>
-        <span className="duckdb-badge">In-Memory Query Engine</span>
+        <span className="explorer-badge">SQL Query Interface</span>
+      </div>
+      
+      {/* Data context info */}
+      <div className="data-context-banner">
+        <div className="context-icon">i</div>
+        <div className="context-text">
+          <strong>Available data:</strong> This explorer queries the in-memory results from your forecast run. 
+          Data includes {dataContext.hasForecast && 'forecast summary'}
+          {dataContext.hasThroughput && `, ${dataContext.throughputWeeks} weeks of throughput history`}
+          {dataContext.hasSimulation && `, and ${dataContext.simulationSamples.toLocaleString()} simulation samples`}.
+          Data is not persisted and will reset when you run a new forecast.
+        </div>
       </div>
       
       <div className="explorer-content">
         <div className="explorer-sidebar">
-          <QueryTemplates onSelect={(sql) => {
-            setCurrentSql(sql);
-            executeQuery(sql);
-          }} />
+          <QueryTemplates 
+            onSelect={handleTemplateSelect} 
+            currentSql={currentSql}
+          />
           
           <div className="available-tables">
-            <h4>Available Tables</h4>
-            <ul>
-              <li><code>forecast</code> - P50/P80/P95 results</li>
-              <li><code>throughput</code> - Weekly velocity</li>
-              <li><code>simulation</code> - Distribution data</li>
-            </ul>
-            <p className="table-hint">
-              Supports: SELECT, WHERE, ORDER BY, LIMIT
-            </p>
+            <h4>Table Schema</h4>
+            <div className="table-schema">
+              <div className="schema-table">
+                <code>forecast</code>
+                <span className="schema-hint">1 row</span>
+                <ul className="schema-columns">
+                  <li>p50_weeks, p80_weeks, p95_weeks</li>
+                  <li>remaining_work, weeks_analyzed</li>
+                  <li>avg_throughput, simulation_count</li>
+                </ul>
+              </div>
+              
+              <div className="schema-table">
+                <code>throughput</code>
+                <span className="schema-hint">{dataContext.throughputWeeks} rows</span>
+                <ul className="schema-columns">
+                  <li>weekStart</li>
+                  <li>pointsCompleted</li>
+                  <li>issuesCompleted</li>
+                </ul>
+              </div>
+              
+              <div className="schema-table">
+                <code>simulation</code>
+                <span className="schema-hint">{dataContext.simulationSamples > 0 ? `${dataContext.simulationSamples.toLocaleString()} rows` : 'varies'}</span>
+                <ul className="schema-columns">
+                  <li>weeks (completion time)</li>
+                  <li>count (frequency)</li>
+                  <li>percent (distribution %)</li>
+                </ul>
+              </div>
+            </div>
+            
+            <div className="syntax-help">
+              <h4>Supported SQL</h4>
+              <ul>
+                <li><code>SELECT *</code> or columns</li>
+                <li><code>WHERE col = value</code></li>
+                <li><code>ORDER BY col ASC/DESC</code></li>
+                <li><code>LIMIT n</code></li>
+              </ul>
+            </div>
           </div>
         </div>
         
@@ -375,7 +460,8 @@ export function DataExplorer({ forecastData, throughputData, simulationResults }
           <SQLEditor 
             onExecute={executeQuery}
             disabled={false}
-            defaultSql={currentSql}
+            sql={currentSql}
+            onSqlChange={setCurrentSql}
           />
           
           {queryError && (
@@ -387,10 +473,17 @@ export function DataExplorer({ forecastData, throughputData, simulationResults }
           {results && (
             <div className="query-results">
               <div className="results-header">
-                <span>{results.length} row(s)</span>
+                <span>{results.length} row{results.length !== 1 ? 's' : ''} returned</span>
                 {queryTime && <span className="query-time">{queryTime}ms</span>}
               </div>
               <ResultsTable data={results} />
+            </div>
+          )}
+          
+          {!results && !queryError && (
+            <div className="results-placeholder">
+              <p>Select a quick query or write your own SQL to explore the data.</p>
+              <p className="placeholder-hint">Try: <code>SELECT * FROM throughput ORDER BY pointsCompleted DESC LIMIT 5</code></p>
             </div>
           )}
         </div>

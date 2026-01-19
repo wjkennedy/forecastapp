@@ -1109,3 +1109,275 @@ select {
     opacity: 1;
   }
 }
+
+/* Data Explorer Enhancements */
+.explorer-badge {
+  font-size: 11px;
+  background: #e9f2ff;
+  color: #0052cc;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-weight: 500;
+}
+
+.dark-mode .explorer-badge {
+  background: #1c2b41;
+  color: #579dff;
+}
+
+/* Context Banner */
+.data-context-banner {
+  display: flex;
+  gap: 12px;
+  padding: 12px 16px;
+  background: #fffae6;
+  border-bottom: 1px solid #dfe1e6;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.dark-mode .data-context-banner {
+  background: #332e1b;
+  border-bottom-color: #38414a;
+}
+
+.context-icon {
+  width: 20px;
+  height: 20px;
+  background: #ffab00;
+  color: #172b4d;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.context-text {
+  color: #5e6c84;
+}
+
+.dark-mode .context-text {
+  color: #b6c2cf;
+}
+
+.context-text strong {
+  color: #172b4d;
+}
+
+.dark-mode .context-text strong {
+  color: #dfe1e6;
+}
+
+/* Query Templates Enhancements */
+.templates-hint {
+  font-size: 11px;
+  color: #8c9bab;
+  margin: 0 0 8px 0;
+}
+
+.template-button {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  background: white;
+  border: 1px solid #dfe1e6;
+  border-radius: 4px;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.template-button:hover {
+  background: #e9f2ff;
+  border-color: #0052cc;
+}
+
+.template-button.active {
+  background: #e9f2ff;
+  border-color: #0052cc;
+  box-shadow: 0 0 0 1px #0052cc;
+}
+
+.dark-mode .template-button {
+  background: #22272b;
+  border-color: #38414a;
+}
+
+.dark-mode .template-button:hover,
+.dark-mode .template-button.active {
+  background: #1c2b41;
+  border-color: #579dff;
+}
+
+.dark-mode .template-button.active {
+  box-shadow: 0 0 0 1px #579dff;
+}
+
+.template-name {
+  font-weight: 600;
+  font-size: 13px;
+  color: #172b4d;
+}
+
+.dark-mode .template-name {
+  color: #b6c2cf;
+}
+
+.template-desc {
+  font-size: 11px;
+  color: #5e6c84;
+}
+
+.dark-mode .template-desc {
+  color: #8c9bab;
+}
+
+/* Table Schema */
+.table-schema {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.schema-table {
+  background: #f4f5f7;
+  border-radius: 4px;
+  padding: 10px;
+}
+
+.dark-mode .schema-table {
+  background: #22272b;
+}
+
+.schema-table code {
+  background: #e9f2ff;
+  color: #0052cc;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.dark-mode .schema-table code {
+  background: #1c2b41;
+  color: #579dff;
+}
+
+.schema-hint {
+  font-size: 10px;
+  color: #8c9bab;
+  margin-left: 8px;
+}
+
+.schema-columns {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0 0;
+}
+
+.schema-columns li {
+  font-size: 11px;
+  color: #5e6c84;
+  padding: 2px 0;
+  font-family: 'Monaco', 'Menlo', monospace;
+}
+
+.dark-mode .schema-columns li {
+  color: #8c9bab;
+}
+
+/* Syntax Help */
+.syntax-help {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid #dfe1e6;
+}
+
+.dark-mode .syntax-help {
+  border-top-color: #38414a;
+}
+
+.syntax-help h4 {
+  margin: 0 0 8px 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: #5e6c84;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.dark-mode .syntax-help h4 {
+  color: #8c9bab;
+}
+
+.syntax-help ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.syntax-help li {
+  font-size: 12px;
+  padding: 4px 0;
+  color: #5e6c84;
+}
+
+.dark-mode .syntax-help li {
+  color: #8c9bab;
+}
+
+.syntax-help code {
+  background: #f4f5f7;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 11px;
+}
+
+.dark-mode .syntax-help code {
+  background: #22272b;
+}
+
+/* Results Placeholder */
+.results-placeholder {
+  padding: 48px 24px;
+  text-align: center;
+  background: #fafbfc;
+  border-radius: 4px;
+  border: 1px dashed #dfe1e6;
+}
+
+.dark-mode .results-placeholder {
+  background: #1d2125;
+  border-color: #38414a;
+}
+
+.results-placeholder p {
+  margin: 0 0 12px 0;
+  color: #5e6c84;
+  font-size: 14px;
+}
+
+.dark-mode .results-placeholder p {
+  color: #8c9bab;
+}
+
+.placeholder-hint {
+  font-size: 12px;
+}
+
+.placeholder-hint code {
+  background: #e9f2ff;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  color: #0052cc;
+}
+
+.dark-mode .placeholder-hint code {
+  background: #1c2b41;
+  color: #579dff;
+}
