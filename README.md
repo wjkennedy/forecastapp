@@ -10,6 +10,14 @@ A Forge app that provides Monte Carlo simulation-based forecasting for Jira proj
 - DuckDB for efficient in-memory data processing
 - Custom UI built with React and Forge Bridge
 
+## Quick tour
+
+The Forecast app runs as a Jira project page module in Forge. When you run a forecast, the backend uses DuckDB to
+aggregate Jira issue data (throughput and remaining work) in-memory, then returns the aggregated series to the UI for
+simulation. On the client, the Monte Carlo simulation runs in-browser and stores its results in an in-memory dataset
+that powers the SQL-like Data Explorer. You can choose up to 50,000 simulation samples depending on accuracy and
+runtime needs; results are never persisted and reset with each run.
+
 ## Prerequisites
 
 - Node.js 18+ and npm

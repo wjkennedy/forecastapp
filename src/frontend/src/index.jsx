@@ -221,7 +221,12 @@ function App() {
         </p>
         <p>
           <strong>How it works:</strong> We analyze your team's past throughput (how many items completed per week), 
-          then run 10,000 simulations to determine the probability distribution of completion dates.
+          then run up to 50,000 simulations in your browser to determine the probability distribution of completion dates.
+        </p>
+        <p>
+          <strong>Data processing:</strong> Jira issues are aggregated with DuckDB in-memory on the backend, and the
+          resulting throughput data is sent to the client. Your simulation results stay in a client-side in-memory
+          dataset and can be explored with SQL-style queries in the Data Explorer.
         </p>
         <button 
           className="link-button" 
