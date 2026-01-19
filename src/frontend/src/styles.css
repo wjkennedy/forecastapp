@@ -298,6 +298,49 @@ select {
   color: #ff8f73;
 }
 
+/* Error Boundary */
+.error-boundary {
+  background: #ffebe6;
+  border: 1px solid #de350b;
+  border-radius: 8px;
+  padding: 24px;
+  margin: 16px 0;
+  color: #de350b;
+}
+
+.dark-mode .error-boundary {
+  background: #42221f;
+  border-color: #ff8f73;
+  color: #ff8f73;
+}
+
+.error-boundary p {
+  margin: 0 0 12px 0;
+}
+
+.error-boundary details {
+  margin-top: 12px;
+}
+
+.error-boundary summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: #bf2600;
+}
+
+.dark-mode .error-boundary summary {
+  color: #ff8f73;
+}
+
+.error-boundary pre {
+  margin: 8px 0 0 0;
+  padding: 12px;
+  background: rgba(0,0,0,0.1);
+  border-radius: 4px;
+  font-size: 12px;
+  overflow-x: auto;
+}
+
 .results {
   background: white;
   border-radius: 8px;

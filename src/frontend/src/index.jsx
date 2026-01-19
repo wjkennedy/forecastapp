@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from "react"
+import React, { useState, useEffect } from "react"
 import ReactDOM from "react-dom/client"
 import "./styles.css"
 import DataExplorer from "./DataExplorer"
@@ -95,6 +95,47 @@ function HelpTooltip({ text }) {
   )
 }
 
+// Simple error boundary as a functional wrapper
+function SafeRender({ children, fallback, name }) {
+  try {
+    return children
+  } catch (err) {
+    console.error(`[v0] SafeRender error in ${name}:`, err)
+    return fallback || <div className="error">Error rendering {name}: {err.message}</div>
+  }
+}
+
+// Error boundary class component for catching render errors
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props)
+    this.state = { hasError: false, error: null }
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error }
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error(`[v0] ErrorBoundary caught error in ${this.props.name}:`, error, errorInfo)
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="error-boundary">
+          <p>Something went wrong rendering {this.props.name || 'this section'}.</p>
+          <details>
+            <summary>Error details</summary>
+            <pre>{this.state.error?.message}</pre>
+          </details>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
+
 function App() {
   const [projects, setProjects] = useState([])
   const [selectedProject, setSelectedProject] = useState("")
@@ -145,6 +186,7 @@ function App() {
 
   const runForecast = async () => {
     if (!selectedProject) return
+    console.log("[v0] runForecast: Starting for project", selectedProject)
     setLoading(true)
     setError(null)
     setForecast(null)
@@ -152,28 +194,37 @@ function App() {
 
     try {
       // Step 1: Fetch and aggregate data from Jira
+      console.log("[v0] runForecast: Fetching data...")
       const aggregateResult = await invokeResolver("fetchAndAggregate", {
         scopeType: "project",
         scopeParams: { projectKey: selectedProject },
       })
 
+      console.log("[v0] runForecast: Aggregate result received", aggregateResult?.success)
+
       if (!aggregateResult?.success) {
         throw new Error(aggregateResult?.error || "Aggregation failed")
       }
 
+      console.log("[v0] runForecast: Setting aggregate data")
       setAggregateData(aggregateResult)
 
       // Step 2: Run Monte Carlo simulation client-side with progress
+      console.log("[v0] runForecast: Preparing throughput data")
       const throughputData = aggregateResult.throughput?.weeklyData || 
                             aggregateResult.throughput?.pointsPerWeek?.map((p, i) => ({
                               pointsCompleted: p,
                               issuesCompleted: aggregateResult.throughput?.issuesPerWeek?.[i] || 0
                             })) || []
       
+      console.log("[v0] runForecast: Throughput data length:", throughputData.length)
+      
       const remainingWork = aggregateResult.remaining?.totalPoints || 
                            aggregateResult.remaining?.total_points ||
                            aggregateResult.remaining?.issueCount ||
                            aggregateResult.remaining?.issue_count || 0
+      
+      console.log("[v0] runForecast: Remaining work:", remainingWork)
       
       const useIssueCount = (aggregateResult.remaining?.totalPoints || aggregateResult.remaining?.total_points || 0) === 0
 
@@ -183,6 +234,7 @@ function App() {
 
       setLoading(false) // Stop loading indicator, simulation progress will take over
 
+      console.log("[v0] runForecast: Starting simulation with", simulationSamples, "samples")
       const forecastResult = await simulation.run(throughputData, remainingWork, {
         samples: simulationSamples,
         seed: aggregateResult.snapshotId || selectedProject,
@@ -190,11 +242,14 @@ function App() {
         batchSize: 500,
       })
 
+      console.log("[v0] runForecast: Simulation complete", forecastResult?.success)
+
       if (!forecastResult?.success) {
         throw new Error(forecastResult?.error || "Simulation failed")
       }
 
       // Enhance result with remaining work info
+      console.log("[v0] runForecast: Setting forecast result")
       setForecast({
         ...forecastResult,
         remaining: remainingWork,
@@ -202,7 +257,9 @@ function App() {
         throughput: forecastResult.throughputStats,
         useIssueCount,
       })
+      console.log("[v0] runForecast: Complete!")
     } catch (err) {
+      console.error("[v0] runForecast: Error:", err)
       setError(err.message || "Failed to compute forecast")
       setLoading(false)
     }
@@ -397,17 +454,21 @@ function App() {
           </InfoPanel>
 
           {/* Remaining Work Schedule */}
-          <RemainingWork 
-            remaining={aggregateData?.remaining}
-            forecast={forecast}
-            throughput={aggregateData?.throughput}
-          />
+          <ErrorBoundary name="Remaining Work">
+            <RemainingWork 
+              remaining={aggregateData?.remaining}
+              forecast={forecast}
+              throughput={aggregateData?.throughput}
+            />
+          </ErrorBoundary>
 
           {/* Estimation Accuracy Insights */}
-          <EstimationInsights 
-            estimationAccuracy={aggregateData?.estimationAccuracy}
-            throughput={aggregateData?.throughput}
-          />
+          <ErrorBoundary name="Estimation Insights">
+            <EstimationInsights 
+              estimationAccuracy={aggregateData?.estimationAccuracy}
+              throughput={aggregateData?.throughput}
+            />
+          </ErrorBoundary>
 
           <div className="explorer-toggle">
             <button 
@@ -420,11 +481,13 @@ function App() {
           </div>
 
           {showExplorer && (
-            <DataExplorer 
-              forecastData={forecast}
-              throughputData={aggregateData?.throughput}
-              simulationResults={forecast?.distribution}
-            />
+            <ErrorBoundary name="Data Explorer">
+              <DataExplorer 
+                forecastData={forecast}
+                throughputData={aggregateData?.throughput}
+                simulationResults={forecast?.distribution}
+              />
+            </ErrorBoundary>
           )}
         </div>
       )}
