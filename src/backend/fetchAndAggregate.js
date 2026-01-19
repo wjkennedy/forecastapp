@@ -122,10 +122,37 @@ function computeRemaining(issues) {
   const totalPoints = remainingIssues.reduce((sum, issue) => sum + (issue.storyPoints || 0), 0);
   const unestimatedCount = remainingIssues.filter(issue => !issue.storyPoints).length;
   
+  // Sort remaining issues: In Progress first, then by points (desc), then by created date
+  const sortedIssues = remainingIssues
+    .map(issue => ({
+      key: issue.key,
+      summary: issue.summary,
+      issueType: issue.issueType,
+      status: issue.status,
+      statusCategory: issue.statusCategory,
+      storyPoints: issue.storyPoints,
+      assignee: issue.assignee,
+      created: issue.created,
+      epicKey: issue.epicKey,
+      parentKey: issue.parentKey
+    }))
+    .sort((a, b) => {
+      // In Progress before To Do
+      if (a.statusCategory === 'In Progress' && b.statusCategory !== 'In Progress') return -1;
+      if (b.statusCategory === 'In Progress' && a.statusCategory !== 'In Progress') return 1;
+      // Then by story points (descending, nulls last)
+      const aPoints = a.storyPoints || 0;
+      const bPoints = b.storyPoints || 0;
+      if (aPoints !== bPoints) return bPoints - aPoints;
+      // Then by created date (oldest first)
+      return new Date(a.created) - new Date(b.created);
+    });
+  
   return {
     issueCount,
     totalPoints,
-    unestimatedCount
+    unestimatedCount,
+    issues: sortedIssues // Include actual issue details
   };
 }
 

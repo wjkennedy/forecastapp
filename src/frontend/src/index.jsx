@@ -5,6 +5,7 @@ import ReactDOM from "react-dom/client"
 import "./styles.css"
 import DataExplorer from "./DataExplorer"
 import { SimulationProgress, useSimulation } from "./MonteCarloSimulation"
+import RemainingWork from "./RemainingWork"
 
 // ========== IMMEDIATE INITIALIZATION ==========
 console.log("[v0] ========== SCRIPT START ==========")
@@ -221,12 +222,7 @@ function App() {
         </p>
         <p>
           <strong>How it works:</strong> We analyze your team's past throughput (how many items completed per week), 
-          then run up to 50,000 simulations in your browser to determine the probability distribution of completion dates.
-        </p>
-        <p>
-          <strong>Data processing:</strong> Jira issues are aggregated with DuckDB in-memory on the backend, and the
-          resulting throughput data is sent to the client. Your simulation results stay in a client-side in-memory
-          dataset and can be explored with SQL-style queries in the Data Explorer.
+          then run 10,000 simulations to determine the probability distribution of completion dates.
         </p>
         <button 
           className="link-button" 
@@ -398,6 +394,13 @@ function App() {
               Re-run the forecast regularly as conditions change.
             </p>
           </InfoPanel>
+
+          {/* Remaining Work Schedule */}
+          <RemainingWork 
+            remaining={aggregateData?.remaining}
+            forecast={forecast}
+            throughput={aggregateData?.throughput}
+          />
 
           <div className="explorer-toggle">
             <button 
