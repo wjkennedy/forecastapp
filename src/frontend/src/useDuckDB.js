@@ -3,20 +3,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import * as duckdb from '@duckdb/duckdb-wasm';
 
-// CDN URLs for DuckDB WASM bundles
-const DUCKDB_BUNDLES = {
-  mvp: {
-    mainModule: 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.29.0/dist/duckdb-mvp.wasm',
-    mainWorker: 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.29.0/dist/duckdb-browser-mvp.worker.js',
-  },
-  eh: {
-    mainModule: 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.29.0/dist/duckdb-eh.wasm',
-    mainWorker: 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.29.0/dist/duckdb-browser-eh.worker.js',
-  },
-};
-
 /**
  * React hook for using DuckDB-WASM in the browser
+ * Uses locally bundled WASM files to work within Forge's CSP
  */
 export function useDuckDB() {
   const [db, setDb] = useState(null);
@@ -32,30 +21,59 @@ export function useDuckDB() {
 
     const initDuckDB = async () => {
       try {
-        console.log('[DuckDB] Initializing DuckDB-WASM...');
+        // Get the base URL for locally bundled files
+        // In Forge, this will be the static resource path
+        const baseUrl = new URL('.', window.location.href).href;
         
-        // Select bundle based on browser capabilities
-        const bundle = await duckdb.selectBundle(DUCKDB_BUNDLES);
-        console.log('[DuckDB] Selected bundle:', bundle.mainModule);
+        // Local bundle paths (files are copied by webpack)
+        const MANUAL_BUNDLES = {
+          mvp: {
+            mainModule: `${baseUrl}duckdb-mvp.wasm`,
+            mainWorker: `${baseUrl}duckdb-browser-mvp.worker.js`,
+          },
+          eh: {
+            mainModule: `${baseUrl}duckdb-eh.wasm`,
+            mainWorker: `${baseUrl}duckdb-browser-eh.worker.js`,
+          },
+        };
         
-        // Create worker
-        const worker = new Worker(bundle.mainWorker);
+        // Try EH bundle first (better performance), fallback to MVP
+        let bundle;
+        try {
+          // Check if EH worker is accessible
+          const ehWorkerResponse = await fetch(MANUAL_BUNDLES.eh.mainWorker, { method: 'HEAD' });
+          if (ehWorkerResponse.ok) {
+            bundle = MANUAL_BUNDLES.eh;
+          } else {
+            bundle = MANUAL_BUNDLES.mvp;
+          }
+        } catch {
+          bundle = MANUAL_BUNDLES.mvp;
+        }
+        
+        // Create worker from local file using blob URL to avoid CSP issues
+        const workerResponse = await fetch(bundle.mainWorker);
+        const workerBlob = await workerResponse.blob();
+        const workerUrl = URL.createObjectURL(workerBlob);
+        const worker = new Worker(workerUrl);
+        
         const logger = new duckdb.ConsoleLogger();
         
         // Instantiate DuckDB
         const database = new duckdb.AsyncDuckDB(logger, worker);
         await database.instantiate(bundle.mainModule);
-        console.log('[DuckDB] Database instantiated');
         
         // Create connection
         const connection = await database.connect();
-        console.log('[DuckDB] Connection established');
         
         setDb(database);
         setConn(connection);
         setLoading(false);
+        
+        // Clean up blob URL
+        URL.revokeObjectURL(workerUrl);
       } catch (err) {
-        console.error('[DuckDB] Initialization error:', err);
+        console.error('Failed to initialize DuckDB:', err);
         setError(err.message);
         setLoading(false);
       }
