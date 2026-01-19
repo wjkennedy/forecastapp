@@ -147,16 +147,26 @@ function App() {
   const [showExplorer, setShowExplorer] = useState(false)
   const [aggregateData, setAggregateData] = useState(null)
   const [simulationSamples, setSimulationSamples] = useState(10000)
+  const [siteUrl, setSiteUrl] = useState("")
   
   // Use client-side simulation with progress
   const simulation = useSimulation()
 
   useEffect(() => {
     console.log("[v0] App mounted")
-    // Check bridge availability
-    loadForgeBridge().then(bridge => {
+    // Check bridge availability and get context
+    loadForgeBridge().then(async (bridge) => {
       if (bridge) {
         setBridgeStatus("connected")
+        // Get site URL from context
+        try {
+          const context = await bridge.view.getContext()
+          if (context?.siteUrl) {
+            setSiteUrl(context.siteUrl)
+          }
+        } catch (err) {
+          console.error("[v0] Failed to get context:", err)
+        }
         loadProjects()
       } else {
         setBridgeStatus("not available")
@@ -459,6 +469,7 @@ function App() {
               remaining={aggregateData?.remaining}
               forecast={forecast}
               throughput={aggregateData?.throughput}
+              siteUrl={siteUrl}
             />
           </ErrorBoundary>
 

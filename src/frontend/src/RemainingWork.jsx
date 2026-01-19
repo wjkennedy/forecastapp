@@ -134,7 +134,7 @@ function StatusBadge({ status, category }) {
 /**
  * Remaining Work Display Component
  */
-export function RemainingWork({ remaining, forecast, throughput }) {
+export function RemainingWork({ remaining, forecast, throughput, siteUrl }) {
   const [viewMode, setViewMode] = useState('timeline'); // 'timeline' | 'list' | 'summary'
   const [filterStatus, setFilterStatus] = useState('all'); // 'all' | 'in-progress' | 'todo'
   const [sortBy, setSortBy] = useState('schedule'); // 'schedule' | 'points' | 'status'
@@ -310,7 +310,7 @@ export function RemainingWork({ remaining, forecast, throughput }) {
                     <div className="issue-main">
                       <IssueTypeIcon type={issue.issueType} />
                       <a 
-                        href={`/browse/${issue.key}`} 
+                        href={siteUrl ? `${siteUrl}/browse/${issue.key}` : `#${issue.key}`} 
                         className="issue-key"
                         target="_blank"
                         rel="noopener noreferrer"
@@ -363,7 +363,7 @@ export function RemainingWork({ remaining, forecast, throughput }) {
                   <td>
                     <div className="cell-with-icon">
                       <IssueTypeIcon type={issue.issueType} />
-                      <a href={`/browse/${issue.key}`} target="_blank" rel="noopener noreferrer">
+                      <a href={siteUrl ? `${siteUrl}/browse/${issue.key}` : `#${issue.key}`} target="_blank" rel="noopener noreferrer">
                         {issue.key}
                       </a>
                     </div>
