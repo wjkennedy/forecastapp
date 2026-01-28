@@ -7,6 +7,7 @@ import DataExplorer from "./DataExplorer"
 import { SimulationProgress, useSimulation } from "./MonteCarloSimulation"
 import RemainingWork from "./RemainingWork"
 import EstimationInsights from "./EstimationInsights"
+import ConfidenceRecommendation from "./ConfidenceRecommendation"
 
 // ========== IMMEDIATE INITIALIZATION ==========
 console.log("[v0] ========== SCRIPT START ==========")
@@ -462,6 +463,14 @@ function App() {
               Re-run the forecast regularly as conditions change.
             </p>
           </InfoPanel>
+
+          {/* Confidence-Based Recommendation */}
+          <ErrorBoundary name="Confidence Recommendation">
+            <ConfidenceRecommendation 
+              confidence={aggregateData?.confidence}
+              forecast={forecast}
+            />
+          </ErrorBoundary>
 
           {/* Remaining Work Schedule */}
           <ErrorBoundary name="Remaining Work">

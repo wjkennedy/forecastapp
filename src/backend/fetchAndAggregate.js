@@ -1,4 +1,5 @@
 import api, { route } from '@forge/api';
+import computeConfidence from './computeConfidence.js';
 
 /**
  * Fetch Jira issues and compute baseline aggregations using pure JavaScript
@@ -39,7 +40,11 @@ export async function handler(req) {
     const estimationAccuracy = computeEstimationAccuracy(issues);
     console.log('Estimation accuracy computed:', estimationAccuracy.sampleSize, 'issues analyzed');
     
-    // 7. Generate snapshot ID
+    // 7. Compute forecast confidence
+    const confidence = computeConfidence(throughput.weeklyData, estimationAccuracy);
+    console.log('Confidence analysis completed');
+    
+    // 8. Generate snapshot ID
     const snapshotId = generateSnapshotId(issues);
     
     const elapsed = Date.now() - startTime;
@@ -52,6 +57,7 @@ export async function handler(req) {
       remaining,
       teamSummary,
       estimationAccuracy,
+      confidence,
       issueCount: issues.length,
       executionTime: elapsed
     };

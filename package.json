@@ -17,6 +17,7 @@
     "@forge/react": "11.9.1",
     "@forge/resolver": "1.7.1",
     "@rspack/core": "latest",
+    "@swc/helpers": "latest",
     "@vercel/analytics": "1.6.1",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",

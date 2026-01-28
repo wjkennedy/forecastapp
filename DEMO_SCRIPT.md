@@ -121,7 +121,7 @@ Show the three P-values highlighted:
 
 ## DEMO FLOW SUMMARY
 
-```
+\`\`\`
 Open App
   ↓
 Select Project (PLATFORM) 
@@ -141,7 +141,7 @@ Show week-by-week breakdown, color-coding
 (Optional) Show Estimation Insights
   ↓
 Call to action
-```
+\`\`\`
 
 ---
 
