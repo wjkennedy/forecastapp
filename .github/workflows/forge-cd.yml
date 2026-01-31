@@ -17,6 +17,9 @@ jobs:
           cache: "npm"
       - name: Install deps and lint
         run: |
+          test -n "$FORGE_EMAIL" || (echo "FORGE_EMAIL is missing" && exit 1)
+          test -n "$FORGE_API_TOKEN" || (echo "FORGE_API_TOKEN is missing" && exit 1)
+          echo "Forge auth vars are present."
           npm ci
           npx @forge/cli@12 settings set usage-analytics true
           npx @forge/cli@12 lint
