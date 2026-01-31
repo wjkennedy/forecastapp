@@ -2,6 +2,8 @@
 
 A Forge app for Jira that provides Monte Carlo simulation-based forecasting using client-side DuckDB for data aggregation.
 
+![](screenshot.png)
+
 ## Features
 
 - Fetch and analyze Jira issues from projects, epics, or custom JQL queries
