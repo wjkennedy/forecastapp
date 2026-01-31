@@ -20,12 +20,17 @@ jobs:
           cache: "npm"
       - name: Install deps and lint
         run: |
-          test -n "$FORGE_EMAIL" || (echo "FORGE_EMAIL is missing" && exit 1)
-          test -n "$FORGE_API_TOKEN" || (echo "FORGE_API_TOKEN is missing" && exit 1)
-          echo "Forge auth vars are present."
+            set -euo pipefail
+    echo "Runner user: $(id -u):$(id -g) $(whoami)"
+    echo "FORGE_EMAIL length: ${#FORGE_EMAIL}"
+    if [ -z "$FORGE_EMAIL" ]; then echo "FORGE_EMAIL is missing"; exit 1; fi
+    if [ -z "$FORGE_API_TOKEN" ]; then echo "FORGE_API_TOKEN is missing"; exit 1; fi
+    echo "Forge auth vars are present."
           npm ci
           npx @forge/cli@12 settings set usage-analytics true
           npx @forge/cli@12 lint
+
+
 
   deploy_development:
     if: startsWith(github.ref, 'refs/heads/')
