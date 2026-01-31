@@ -3,20 +3,76 @@ name: Forge CD
 on:
   push:
     branches: [ main ]
+    tags:
+      - "v*"
 
 jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "20"
           cache: "npm"
-
       - name: Install deps and lint
         run: |
           npm ci
           npx @forge/cli@12 settings set usage-analytics true
           npx @forge/cli@12 lint
+
+  deploy_staging:
+    if: startsWith(github.ref, 'refs/heads/')
+    runs-on: ubuntu-latest
+    environment: staging
+    needs: [ lint ]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+      - name: Deploy and upgrade install (staging)
+        uses: your-org/a9-forge-ci@v1
+        env:
+          FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
+          FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
+        with:
+          forge-cli-version: "12"
+          working-directory: "."
+          pre-run: |
+            npm ci
+          usage-analytics: "true"
+          environment: "staging"
+          deploy: "true"
+          install: "true"
+          site: ${{ vars.ATLASSIAN_SITE }}
+          product: ${{ vars.ATLASSIAN_PRODUCT }}
+          upgrade: "true"
+          confirm-scopes: "true"
+
+  deploy_production:
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    environment: production
+    needs: [ lint ]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+      - name: Deploy only (production)
+        uses: wjkennedy/a9-forge-ci@v1
+        env:
+          FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
+          FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
+        with:
+          forge-cli-version: "12"
+          working-directory: "."
+          pre-run: |
+            npm ci
+          usage-analytics: "true"
+          environment: "production"
+          deploy: "true"
+          install: "false"
