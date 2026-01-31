@@ -7,7 +7,7 @@ A Forge app for Jira that provides Monte Carlo simulation-based forecasting usin
 - Fetch and analyze Jira issues from projects, epics, or custom JQL queries
 - Compute baseline forecasts using historical throughput data
 - Monte Carlo simulation with P50, P80, and P95 confidence levels
-- DuckDB for efficient in-memory data processing
+- DuckDB for efficient in-memory data processing and SQL access
 - Custom UI built with React and Forge Bridge
 
 ## Prerequisites
