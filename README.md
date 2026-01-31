@@ -1,6 +1,6 @@
 # Jira Forecast App
 
-A Forge app that provides Monte Carlo simulation-based forecasting for Jira projects using DuckDB for data aggregation.
+A Forge app for Jira that provides Monte Carlo simulation-based forecasting using client-side DuckDB for data aggregation.
 
 ## Features
 
