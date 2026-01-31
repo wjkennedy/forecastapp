@@ -21,10 +21,10 @@ jobs:
           npx @forge/cli@12 settings set usage-analytics true
           npx @forge/cli@12 lint
 
-  deploy_staging:
+  deploy_development:
     if: startsWith(github.ref, 'refs/heads/')
     runs-on: ubuntu-latest
-    environment: staging
+    environment: development
     needs: [ lint ]
     steps:
       - uses: actions/checkout@v4
@@ -33,7 +33,7 @@ jobs:
           node-version: "20"
           cache: "npm"
       - name: Deploy and upgrade install (staging)
-        uses: your-org/a9-forge-ci@v1
+        uses: wjkennedy/a9-forge-ci@v1
         env:
           FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
           FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
