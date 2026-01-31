@@ -1,13 +1,13 @@
 jobs:
-  deploy_staging:
+  deploy_development:
     runs-on: ubuntu-latest
     container:
       image: atlassian/forge-devcontainer:latest
-    environment: staging
+    environment: development
     steps:
       - uses: actions/checkout@v4
 
-      - name: Deploy and upgrade install (staging)
+      - name: Deploy and upgrade install (development)
         uses: wjkennedy/a9-forge-ci@v1
         env:
           FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
@@ -15,7 +15,7 @@ jobs:
         with:
           working-directory: "."
           usage-analytics: "true"
-          environment: "staging"
+          environment: "development"
           pre-run: |
             npm ci
           deploy: "true"
