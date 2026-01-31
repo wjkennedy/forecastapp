@@ -1,0 +1,22 @@
+name: Forge CD
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install deps and lint
+        run: |
+          npm ci
+          npx @forge/cli@12 settings set usage-analytics true
+          npx @forge/cli@12 lint
