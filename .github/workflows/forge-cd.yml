@@ -37,7 +37,25 @@ jobs:
         with:
           node-version: "20"
           cache: "npm"
+      - name: Forge auth probe
+        shell: bash
+        env:
+          FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
+          FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+  
+          # safe prints
+          echo "FORGE_EMAIL=${FORGE_EMAIL@Q}"
+          echo "FORGE_EMAIL length: ${#FORGE_EMAIL}"
+          echo "FORGE_API_TOKEN length: ${#FORGE_API_TOKEN}"
 
+          # hard fail if empty
+          test -n "$FORGE_EMAIL"
+          test -n "$FORGE_API_TOKEN"
+
+          # the actual auth test
+          npx @forge/cli@12 whoami --verbose
       - name: Install deps and lint
         run: |
           set -euo pipefail
