@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       target_env:
-        description: "Forge environment to deploy to"
+        description: "Target environment"
         required: true
         type: choice
         options:
@@ -17,12 +17,12 @@ on:
           - production
         default: development
       install:
-        description: "Run forge install (upgrade) after deploy"
+        description: "Run forge install (upgrade) after deploy (non-prod recommended)"
         required: true
         type: boolean
         default: true
       confirm_scopes:
-        description: "Auto-confirm new scopes during install"
+        description: "Auto-confirm new scopes during install (non-prod recommended)"
         required: true
         type: boolean
         default: true
@@ -32,15 +32,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: "npm"
 
       - name: Install deps and lint
-        env:
-          FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
-          FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
         run: |
           set -euo pipefail
           npm ci
@@ -75,9 +73,16 @@ jobs:
           usage-analytics: "true"
           environment: "development"
           deploy: "true"
+
+          # Manual runs can toggle install; push-to-main defaults to install=true
           install: ${{ github.event_name == 'push' && 'true' || (inputs.install && 'true' || 'false') }}
+
+          # Product is fixed for this Marketplace app
+          product: "jira"
+
+          # Site comes from the GitHub Environment (development)
           site: ${{ vars.ATLASSIAN_SITE }}
-          product: ${{ vars.ATLASSIAN_PRODUCT }}
+
           upgrade: "true"
           confirm-scopes: ${{ github.event_name == 'push' && 'true' || (inputs.confirm_scopes && 'true' || 'false') }}
 
@@ -96,7 +101,7 @@ jobs:
           node-version: "20"
           cache: "npm"
 
-      - name: Deploy only (production)
+      - name: Deploy (production)
         uses: wjkennedy/a9-forge-ci@v1
         env:
           FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
@@ -109,4 +114,12 @@ jobs:
           usage-analytics: "true"
           environment: "production"
           deploy: "true"
+
+          # Recommended: deploy-only in production
           install: "false"
+
+          # Product is fixed for this Marketplace app
+          product: "jira"
+
+          # Site comes from the GitHub Environment (production)
+          site: ${{ vars.ATLASSIAN_SITE }}
