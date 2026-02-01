@@ -57,9 +57,10 @@ jobs:
           working-directory: "."
           pre-run: |
             npm ci
-            cd src/frontend && npm install && npm run build && cd ../..
-            cp -r src/frontend/build/* static/
-            cd ..
+            npm run build
+            test -d static && ls -la static | head -n 50
+            test -d node_modules/@forge && ls -la node_modules/@forge | head -n 50
+            node -p "require.resolve('seedrandom')"
           usage-analytics: "true"
 
           environment: "development"
