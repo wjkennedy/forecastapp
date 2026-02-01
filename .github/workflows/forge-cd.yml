@@ -79,7 +79,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Deploy and upgrade install (development)
-        uses: wjkennedy/a9-forge-gh-action@v2
+        uses: wjkennedy/a9-forge-gh-action@2
         env:
           FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
           FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
@@ -115,7 +115,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Deploy only (production)
-        uses: wjkennedy/a9-forge-gh-action@v2
+        uses: wjkennedy/a9-forge-gh-action@2
         env:
           FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
           FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
