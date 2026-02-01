@@ -8,21 +8,21 @@ on:
 
 jobs:
   lint:
-  runs-on: ubuntu-latest
-  steps:
-    - uses: actions/checkout@v4
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
-    - uses: actions/setup-node@v4
-      with:
-        node-version: "20"
-        cache: "npm"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
 
-    - name: Install deps and lint
-      run: |
-        set -euo pipefail
-        npm ci
-        npx @forge/cli@12 settings set usage-analytics true
-        npx @forge/cli@12 lint
+      - name: Install deps and lint
+        run: |
+          set -euo pipefail
+          npm ci
+          npx @forge/cli@12 settings set usage-analytics true
+          npx @forge/cli@12 lint
 
 
 
