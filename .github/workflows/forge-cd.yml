@@ -7,28 +7,22 @@ on:
       - "v*"
 
 jobs:
-  lint:
-    env:
-      FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
-      FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "npm"
-      - name: Install deps and lint
-        run: |
-            set -euo pipefail
-            echo "Runner user: $(id -u):$(id -g) $(whoami)"
-            echo "FORGE_EMAIL length: ${#FORGE_EMAIL}"
-            if [ -z "$FORGE_EMAIL" ]; then echo "FORGE_EMAIL is missing"; exit 1; fi
-            if [ -z "$FORGE_API_TOKEN" ]; then echo "FORGE_API_TOKEN is missing"; exit 1; fi
-            echo "Forge auth vars are present."
-            npm ci
-            npx @forge/cli@12 settings set usage-analytics true
-            npx @forge/cli@12 lint
+lint:
+  runs-on: ubuntu-latest
+  steps:
+    - uses: actions/checkout@v4
+
+    - uses: actions/setup-node@v4
+      with:
+        node-version: "20"
+        cache: "npm"
+
+    - name: Install deps and lint
+      run: |
+        set -euo pipefail
+        npm ci
+        npx @forge/cli@12 settings set usage-analytics true
+        npx @forge/cli@12 lint
 
 
 
