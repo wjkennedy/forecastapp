@@ -6,6 +6,27 @@ on:
     tags:
       - "v*"
 
+  workflow_dispatch:
+    inputs:
+      target_env:
+        description: "Forge environment to deploy to"
+        required: true
+        type: choice
+        options:
+          - development
+          - production
+        default: development
+      install:
+        description: "Run forge install (upgrade) after deploy"
+        required: true
+        type: boolean
+        default: true
+      confirm_scopes:
+        description: "Auto-confirm new scopes during install"
+        required: true
+        type: boolean
+        default: true
+
 jobs:
   lint:
     runs-on: ubuntu-latest
@@ -24,20 +45,22 @@ jobs:
           npx @forge/cli@12 settings set usage-analytics true
           npx @forge/cli@12 lint
 
-
-
   deploy_development:
-    if: startsWith(github.ref, 'refs/heads/')
+    if: |
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/')) ||
+      (github.event_name == 'workflow_dispatch' && inputs.target_env == 'development')
     runs-on: ubuntu-latest
     environment: development
     needs: [ lint ]
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: "npm"
-      - name: Deploy and upgrade install (development)
+
+      - name: Deploy and optional install (development)
         uses: wjkennedy/a9-forge-ci@v1
         env:
           FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
@@ -50,23 +73,27 @@ jobs:
           usage-analytics: "true"
           environment: "development"
           deploy: "true"
-          install: "true"
+          install: ${{ github.event_name == 'push' && 'true' || (inputs.install && 'true' || 'false') }}
           site: ${{ vars.ATLASSIAN_SITE }}
           product: ${{ vars.ATLASSIAN_PRODUCT }}
           upgrade: "true"
-          confirm-scopes: "true"
+          confirm-scopes: ${{ github.event_name == 'push' && 'true' || (inputs.confirm_scopes && 'true' || 'false') }}
 
   deploy_production:
-    if: startsWith(github.ref, 'refs/tags/')
+    if: |
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')) ||
+      (github.event_name == 'workflow_dispatch' && inputs.target_env == 'production')
     runs-on: ubuntu-latest
     environment: production
     needs: [ lint ]
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: "npm"
+
       - name: Deploy only (production)
         uses: wjkennedy/a9-forge-ci@v1
         env:
