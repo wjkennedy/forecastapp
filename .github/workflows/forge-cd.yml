@@ -65,25 +65,11 @@ jobs:
           test -d static || (echo "static/ missing after build:frontend + copy:static" && exit 1)
           forge lint
           
-  deploy_development:
-    needs: [ lint ]
-    runs-on: ubuntu-latest
-    container:
-      image: atlassian/forge-devcontainer:latest
-      options: --user 0
-    environment: development
-    if: |
-      (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/')) ||
-      (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'development')
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Build + deploy (development) without the action
+    install:
+    - name: Build + deploy (development) without the action
     shell: bash
-  env:
-     FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
-     FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
-run: |
+    
+    run: |
       set -euo pipefail
 
       echo "PWD: $(pwd)"
@@ -99,28 +85,25 @@ run: |
       npm run build:frontend
       npm run copy:static
       test -d static || (echo "static/ missing after copy:static" && exit 1)
+
       forge deploy --non-interactive -e development
 
-      
-  deploy_production:
+            
+      deploy_production:
     needs: [ lint ]
-    runs-on: ubuntu-latest
-    container:
-      image: atlassian/forge-devcontainer:latest
-      options: --user 0
-    environment: production
-    if: |
+   
+  options: --user 0
+  environment: production
+  if: |
       (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')) ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'production')
-    steps:
-      - uses: actions/checkout@v4
+  steps:
+     - uses: actions/checkout@v4
 
-      - name: Deploy only (production)
-        uses: wjkennedy/a9-forge-gh-action@2
-        env:
-          FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
-          FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
-        with:
+     - name: Deploy only (production)
+     - uses: wjkennedy/a9-forge-gh-action@2
+       
+     - with:
           forge-cli-version: "latest"
           working-directory: "."
           pre-run: |
@@ -141,3 +124,5 @@ run: |
           install: "false"
           site: ${{ vars.ATLASSIAN_SITE }}
           product: "jira"
+
+    
