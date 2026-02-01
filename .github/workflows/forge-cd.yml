@@ -84,6 +84,30 @@ jobs:
           npm ci
           forge lint
 
+      - name: Deploy and upgrade install (development)
+        uses: wjkennedy/a9-forge-ci@v1
+        env:
+          FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
+          FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
+        with:
+          forge-cli-version: "12"
+          working-directory: "."
+          pre-run: |
+            set -euo pipefail
+            npm ci
+            npm run build:frontend
+            npm run copy:static
+            test -d static || (echo "static/ missing after build:frontend + copy:static" && exit 1)
+            usage-analytics: "true"
+            environment: "development"
+            deploy: "true"
+            install: "true"
+            site: ${{ vars.ATLASSIAN_SITE }}
+            product: "jira"
+            upgrade: "true"
+            confirm-scopes: "true"
+
+
   deploy_development:
     needs: [ lint ]
     runs-on: ubuntu-latest
