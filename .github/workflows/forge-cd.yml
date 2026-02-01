@@ -1,4 +1,4 @@
-name: Forge CD
+name: Forge CD (Local)
 
 on:
   push:
@@ -26,6 +26,11 @@ on:
         required: true
         default: true
         type: boolean
+      forge_cli_version:
+        description: "Forge CLI version (example: latest, 12, 12.5.0)"
+        required: true
+        default: "latest"
+        type: string
 
 jobs:
   lint:
@@ -39,90 +44,176 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Preflight Forge auth (safe)
+      - name: Preflight context and secrets
         shell: bash
         run: |
           set -euo pipefail
+          echo "PWD: $(pwd)"
+          ls -la
+          test -f manifest.yml || (echo "manifest.yml not found at repo root" && exit 1)
           echo "::add-mask::$FORGE_EMAIL"
           echo "::add-mask::$FORGE_API_TOKEN"
           if [ -z "${FORGE_EMAIL:-}" ]; then echo "FORGE_EMAIL missing"; exit 1; fi
           if [ -z "${FORGE_API_TOKEN:-}" ]; then echo "FORGE_API_TOKEN missing"; exit 1; fi
-          echo "Forge auth vars present (email length: ${#FORGE_EMAIL}, token length: ${#FORGE_API_TOKEN})."
 
-      - name: Accept Forge analytics (required for CI)
+      - name: Install Forge CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          FORGE_CLI_VERSION="${{ github.event_name == 'workflow_dispatch' && github.event.inputs.forge_cli_version || 'latest' }}"
+          npm config set unsafe-perm true
+          npm install -g "@forge/cli@${FORGE_CLI_VERSION}"
+          forge --version
+
+      - name: Accept Forge analytics for non-interactive CI
         shell: bash
         run: |
           set -euo pipefail
           forge settings set usage-analytics true
 
-      - name: Install deps, build frontend to static, and lint
+      - name: Install deps, build frontend to static, verify deps, and lint
         shell: bash
         run: |
           set -euo pipefail
+
           npm ci
+
+          node -e "require.resolve('@forge/api'); require.resolve('@forge/resolver'); require.resolve('seedrandom'); console.log('deps OK')"
+
           npm run build:frontend
           npm run copy:static
+
           test -d static || (echo "static/ missing after build:frontend + copy:static" && exit 1)
+          ls -la static
+
           forge lint
-          
-    install:
-    - name: Build + deploy (development) without the action
-    shell: bash
-    
-    run: |
-      set -euo pipefail
 
-      echo "PWD: $(pwd)"
-      test -f manifest.yml || (echo "manifest.yml not found" && exit 1)
-
-      forge settings set usage-analytics true
-
-      npm ci
-
-      # Prove deps exist before Forge bundles
-      node -e "require.resolve('@forge/api'); require.resolve('@forge/resolver'); require.resolve('seedrandom'); console.log('deps OK')"
-
-      npm run build:frontend
-      npm run copy:static
-      test -d static || (echo "static/ missing after copy:static" && exit 1)
-
-      forge deploy --non-interactive -e development
-
-            
-      deploy_production:
+  deploy_development:
     needs: [ lint ]
-   
-  options: --user 0
-  environment: production
-  if: |
+    runs-on: ubuntu-latest
+    container:
+      image: atlassian/forge-devcontainer:latest
+      options: --user 0
+    environment: development
+    if: |
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/')) ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'development')
+    env:
+      FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
+      FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Forge CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          FORGE_CLI_VERSION="${{ github.event_name == 'workflow_dispatch' && github.event.inputs.forge_cli_version || 'latest' }}"
+          npm config set unsafe-perm true
+          npm install -g "@forge/cli@${FORGE_CLI_VERSION}"
+          forge --version
+
+      - name: Accept Forge analytics for non-interactive CI
+        shell: bash
+        run: |
+          set -euo pipefail
+          forge settings set usage-analytics true
+
+      - name: Build app assets required for deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test -f manifest.yml || (echo "manifest.yml not found at repo root" && exit 1)
+
+          npm ci
+
+          node -e "require.resolve('@forge/api'); require.resolve('@forge/resolver'); require.resolve('seedrandom'); console.log('deps OK')"
+
+          npm run build:frontend
+          npm run copy:static
+
+          test -d static || (echo "static/ missing after build:frontend + copy:static" && exit 1)
+          ls -la static
+
+      - name: Deploy to development
+        shell: bash
+        run: |
+          set -euo pipefail
+          forge deploy --non-interactive -e development
+
+      - name: Install or upgrade (development)
+        if: github.event_name != 'workflow_dispatch' || github.event.inputs.install == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          SITE="${{ vars.ATLASSIAN_SITE }}"
+          if [ -z "${SITE}" ]; then
+            echo "ATLASSIAN_SITE is missing in the 'development' environment variables."
+            exit 1
+          fi
+
+          PRODUCT="jira"
+
+          INSTALL_ARGS=(install --non-interactive -e development --site "${SITE}" --product "${PRODUCT}" --upgrade)
+
+          if [ "${{ github.event_name }}" != "workflow_dispatch" ] || [ "${{ github.event.inputs.confirm_scopes }}" = "true" ]; then
+            INSTALL_ARGS+=(--confirm-scopes)
+          fi
+
+          forge "${INSTALL_ARGS[@]}"
+
+  deploy_production:
+    needs: [ lint ]
+    runs-on: ubuntu-latest
+    container:
+      image: atlassian/forge-devcontainer:latest
+      options: --user 0
+    environment: production
+    if: |
       (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')) ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'production')
-  steps:
-     - uses: actions/checkout@v4
+    env:
+      FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
+      FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
 
-     - name: Deploy only (production)
-     - uses: wjkennedy/a9-forge-gh-action@2
-       
-     - with:
-          forge-cli-version: "latest"
-          working-directory: "."
-          pre-run: |
-            set -euo pipefail
-            echo "PWD: $(pwd)"
-            ls -la
-            test -f manifest.yml || (echo "manifest.yml not found in working-directory" && exit 1)
+      - name: Install Forge CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          FORGE_CLI_VERSION="${{ github.event_name == 'workflow_dispatch' && github.event.inputs.forge_cli_version || 'latest' }}"
+          npm config set unsafe-perm true
+          npm install -g "@forge/cli@${FORGE_CLI_VERSION}"
+          forge --version
 
-            npm ci
-            npm run build:frontend
-            npm run copy:static
+      - name: Accept Forge analytics for non-interactive CI
+        shell: bash
+        run: |
+          set -euo pipefail
+          forge settings set usage-analytics true
 
-            test -d static || (echo "static/ missing after build:frontend + copy:static" && exit 1)
-            ls -la static
-          usage-analytics: "true"
-          environment: "production"
-          deploy: "true"
-          install: "false"
-          site: ${{ vars.ATLASSIAN_SITE }}
-          product: "jira"
+      - name: Build app assets required for deploy
+        shell: bash
+        run: |
+          set -euo pipefail
 
-    
+          test -f manifest.yml || (echo "manifest.yml not found at repo root" && exit 1)
+
+          npm ci
+
+          node -e "require.resolve('@forge/api'); require.resolve('@forge/resolver'); require.resolve('seedrandom'); console.log('deps OK')"
+
+          npm run build:frontend
+          npm run copy:static
+
+          test -d static || (echo "static/ missing after build:frontend + copy:static" && exit 1)
+          ls -la static
+
+      - name: Deploy to production
+        shell: bash
+        run: |
+          set -euo pipefail
+          forge deploy --non-interactive -e production
