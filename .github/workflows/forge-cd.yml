@@ -21,14 +21,14 @@ jobs:
       - name: Install deps and lint
         run: |
             set -euo pipefail
-    echo "Runner user: $(id -u):$(id -g) $(whoami)"
-    echo "FORGE_EMAIL length: ${#FORGE_EMAIL}"
-    if [ -z "$FORGE_EMAIL" ]; then echo "FORGE_EMAIL is missing"; exit 1; fi
-    if [ -z "$FORGE_API_TOKEN" ]; then echo "FORGE_API_TOKEN is missing"; exit 1; fi
-    echo "Forge auth vars are present."
-          npm ci
-          npx @forge/cli@12 settings set usage-analytics true
-          npx @forge/cli@12 lint
+            echo "Runner user: $(id -u):$(id -g) $(whoami)"
+            echo "FORGE_EMAIL length: ${#FORGE_EMAIL}"
+            if [ -z "$FORGE_EMAIL" ]; then echo "FORGE_EMAIL is missing"; exit 1; fi
+            if [ -z "$FORGE_API_TOKEN" ]; then echo "FORGE_API_TOKEN is missing"; exit 1; fi
+            echo "Forge auth vars are present."
+            npm ci
+            npx @forge/cli@12 settings set usage-analytics true
+            npx @forge/cli@12 lint
 
 
 
