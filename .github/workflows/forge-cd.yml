@@ -5,140 +5,118 @@ on:
     branches: [ main ]
     tags:
       - "v*"
-
   workflow_dispatch:
     inputs:
-      target_env:
-        description: "Target environment"
+      target:
+        description: "Which environment to deploy"
         required: true
+        default: "development"
         type: choice
         options:
           - development
           - production
-        default: development
       install:
-        description: "Run forge install (upgrade) after deploy (non-prod recommended)"
+        description: "Run forge install (upgrade) after deploy (development only usually)"
         required: true
-        type: boolean
         default: true
-      confirm_scopes:
-        description: "Auto-confirm new scopes during install (non-prod recommended)"
-        required: true
         type: boolean
-        default: true
 
 jobs:
   lint:
     runs-on: ubuntu-latest
+    container:
+      image: atlassian/forge-devcontainer:latest
+    env:
+      FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
+      FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "npm"
-      - name: Forge auth probe
+      - name: Sanity check auth vars exist
         shell: bash
-        env:
-          FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
-          FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
         run: |
           set -euo pipefail
-  
-          # safe prints
-          echo "FORGE_EMAIL=${FORGE_EMAIL@Q}"
-          echo "FORGE_EMAIL=${FORGE_EMAIL}"
-          echo "FORGE_EMAIL length: ${#FORGE_EMAIL}"
-          echo "FORGE_API_TOKEN length: ${#FORGE_API_TOKEN}"
+          if [ -z "${FORGE_EMAIL:-}" ]; then echo "FORGE_EMAIL is missing"; exit 1; fi
+          if [ -z "${FORGE_API_TOKEN:-}" ]; then echo "FORGE_API_TOKEN is missing"; exit 1; fi
+          echo "Auth vars present (email length: ${#FORGE_EMAIL})."
 
-          # hard fail if empty
-          test -n "$FORGE_EMAIL"
-          test -n "$FORGE_API_TOKEN"
+      - name: Accept Forge analytics (required for CI)
+        shell: bash
+        run: |
+          set -euo pipefail
+          forge settings set usage-analytics true
 
-          # the actual auth test
-          npx @forge/cli@12 whoami --verbose
       - name: Install deps and lint
+        shell: bash
         run: |
           set -euo pipefail
           npm ci
-          npx @forge/cli@12 settings set usage-analytics true
-          npx @forge/cli@12 lint
+          forge lint
 
   deploy_development:
+    needs: [ lint ]
+    runs-on: ubuntu-latest
+    container:
+      image: atlassian/forge-devcontainer:latest
+    environment: development
     if: |
       (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/')) ||
-      (github.event_name == 'workflow_dispatch' && inputs.target_env == 'development')
-    runs-on: ubuntu-latest
-    environment: development
-    needs: [ lint ]
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'development')
+    env:
+      FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
+      FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "npm"
+      - name: Accept Forge analytics (required for CI)
+        shell: bash
+        run: |
+          set -euo pipefail
+          forge settings set usage-analytics true
 
-      - name: Deploy and optional install (development)
-        uses: wjkennedy/a9-forge-ci@v1
-        env:
-          FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
-          FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
-        with:
-          forge-cli-version: "12"
-          working-directory: "."
-          pre-run: |
-            npm ci
-          usage-analytics: "true"
-          environment: "development"
-          deploy: "true"
+      - name: Build (if needed) + Deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci
+          forge deploy -e development
 
-          # Manual runs can toggle install; push-to-main defaults to install=true
-          install: ${{ github.event_name == 'push' && 'true' || (inputs.install && 'true' || 'false') }}
-
-          # Product is fixed for this Marketplace app
-          product: "jira"
-
-          # Site comes from the GitHub Environment (development)
-          site: ${{ vars.ATLASSIAN_SITE }}
-
-          upgrade: "true"
-          confirm-scopes: ${{ github.event_name == 'push' && 'true' || (inputs.confirm_scopes && 'true' || 'false') }}
+      - name: Install/upgrade (development)
+        if: github.event_name != 'workflow_dispatch' || github.event.inputs.install == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          forge install --upgrade \
+            --site "${{ vars.ATLASSIAN_SITE }}" \
+            --product "${{ vars.ATLASSIAN_PRODUCT }}" \
+            --confirm-scopes \
+            --non-interactive \
+            -e development
 
   deploy_production:
+    needs: [ lint ]
+    runs-on: ubuntu-latest
+    container:
+      image: atlassian/forge-devcontainer:latest
+    environment: production
     if: |
       (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')) ||
-      (github.event_name == 'workflow_dispatch' && inputs.target_env == 'production')
-    runs-on: ubuntu-latest
-    environment: production
-    needs: [ lint ]
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'production')
+    env:
+      FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
+      FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "npm"
+      - name: Accept Forge analytics (required for CI)
+        shell: bash
+        run: |
+          set -euo pipefail
+          forge settings set usage-analytics true
 
-      - name: Deploy (production)
-        uses: wjkennedy/a9-forge-ci@v1
-        env:
-          FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
-          FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
-        with:
-          forge-cli-version: "12"
-          working-directory: "."
-          pre-run: |
-            npm ci
-          usage-analytics: "true"
-          environment: "production"
-          deploy: "true"
-
-          # Recommended: deploy-only in production
-          install: "false"
-
-          # Product is fixed for this Marketplace app
-          product: "jira"
-
-          # Site comes from the GitHub Environment (production)
-          site: ${{ vars.ATLASSIAN_SITE }}
+      - name: Deploy only (production)
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci
+          forge deploy -e production
