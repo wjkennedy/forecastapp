@@ -57,7 +57,9 @@ jobs:
           working-directory: "."
           pre-run: |
             npm ci
-            npm run build
+            cd src/frontend && npm install && npm run build && cd ../..
+            cp -r src/frontend/build/* static/
+            cd ..
           usage-analytics: "true"
 
           environment: "development"
