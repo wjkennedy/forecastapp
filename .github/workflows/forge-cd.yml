@@ -47,6 +47,7 @@ jobs:
   
           # safe prints
           echo "FORGE_EMAIL=${FORGE_EMAIL@Q}"
+          echo "FORGE_EMAIL=${FORGE_EMAIL}"
           echo "FORGE_EMAIL length: ${#FORGE_EMAIL}"
           echo "FORGE_API_TOKEN length: ${#FORGE_API_TOKEN}"
 
