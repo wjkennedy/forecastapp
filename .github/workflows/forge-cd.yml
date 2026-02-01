@@ -33,9 +33,9 @@ jobs:
   container:
     image: atlassian/forge-devcontainer:latest
   options: --user 0
-    env:
-        FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
-        FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
+  env:
+  FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }
+  FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
   steps:
     - uses: actions/checkout@v4
     - name: Preflight auth (safe)
