@@ -30,83 +30,40 @@ on:
 jobs:
   lint:
     runs-on: ubuntu-latest
-    env:
-      FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
-      FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
-      
     container:
       image: atlassian/forge-devcontainer:latest
       options: --user 0
+    env:
+      FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
+      FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Show runtime context
+      - name: Preflight Forge auth (safe)
         shell: bash
-        
         run: |
           set -euo pipefail
-          echo "Container OS:"
-          cat /etc/*release | sed -n '1,15p'
-          echo
-          echo "User:"
-          id -u
-          id -g
-          whoami
-          echo
-          echo "Workspace:"
-          pwd
-          ls -la
           echo "::add-mask::$FORGE_EMAIL"
           echo "::add-mask::$FORGE_API_TOKEN"
           if [ -z "${FORGE_EMAIL:-}" ]; then echo "FORGE_EMAIL missing"; exit 1; fi
           if [ -z "${FORGE_API_TOKEN:-}" ]; then echo "FORGE_API_TOKEN missing"; exit 1; fi
           echo "Forge auth vars present (email length: ${#FORGE_EMAIL}, token length: ${#FORGE_API_TOKEN})."
 
-
-
-         
       - name: Accept Forge analytics (required for CI)
         shell: bash
-        env:
-          FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
-          FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
         run: |
           set -euo pipefail
-          # Mask in case any downstream tooling echoes
-          echo "::add-mask::$FORGE_EMAIL"
-          echo "::add-mask::$FORGE_API_TOKEN"
           forge settings set usage-analytics true
 
-      - name: Install deps and lint
+      - name: Install deps, build frontend to static, and lint
         shell: bash
         run: |
           set -euo pipefail
           npm ci
+          npm run build:frontend
+          npm run copy:static
+          test -d static || (echo "static/ missing after build:frontend + copy:static" && exit 1)
           forge lint
-
-      - name: Deploy and upgrade install (development)
-        uses: wjkennedy/a9-forge-gh-action@2
-        env:
-          FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
-          FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
-        with:
-          forge-cli-version: "12"
-          working-directory: "."
-          pre-run: |
-            set -euo pipefail
-            npm ci
-            npm run build:frontend
-            npm run copy:static
-            test -d static || (echo "static/ missing after build:frontend + copy:static" && exit 1)
-            usage-analytics: "true"
-            environment: "development"
-            deploy: "true"
-            install: "true"
-            site: ${{ vars.ATLASSIAN_SITE }}
-            product: "jira"
-            upgrade: "true"
-            confirm-scopes: "true"
-
 
   deploy_development:
     needs: [ lint ]
@@ -121,63 +78,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Preflight Forge auth (safe)
-        shell: bash
+      - name: Deploy and upgrade install (development)
+        uses: wjkennedy/a9-forge-gh-action@v2
         env:
           FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
           FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
-        run: |
-          set -euo pipefail
-          echo "::add-mask::$FORGE_EMAIL"
-          echo "::add-mask::$FORGE_API_TOKEN"
-          if [ -z "${FORGE_EMAIL:-}" ]; then echo "FORGE_EMAIL missing"; exit 1; fi
-          if [ -z "${FORGE_API_TOKEN:-}" ]; then echo "FORGE_API_TOKEN missing"; exit 1; fi
-          echo "Forge auth vars present (email length: ${#FORGE_EMAIL}, token length: ${#FORGE_API_TOKEN})."
-
-      - name: Accept Forge analytics (required for CI)
-        shell: bash
-        env:
-          FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
-          FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
-        run: |
-          set -euo pipefail
-          forge settings set usage-analytics true
-
-      - name: Deploy (development)
-        shell: bash
-        env:
-          FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
-          FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
-        run: |
-          set -euo pipefail
-          npm ci
-          forge deploy -e development
-
-      - name: Install/upgrade (development)
-        if: github.event_name != 'workflow_dispatch' || github.event.inputs.install == 'true'
-        shell: bash
-        env:
-          FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
-          FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
-        run: |
-          set -euo pipefail
-
-          # Product is fixed for a Marketplace app; set this once and do not parameterize
-          PRODUCT="jira"
-
-          # Prefer environment variables for site; fail fast if missing
-          if [ -z "${{ vars.ATLASSIAN_SITE }}" ]; then
-            echo "ATLASSIAN_SITE is missing in the 'development' environment variables."
-            exit 1
-          fi
-
-          INSTALL_ARGS="--upgrade --site ${{ vars.ATLASSIAN_SITE }} --product ${PRODUCT} --non-interactive -e development"
-
-          if [ "${{ github.event_name }}" != "workflow_dispatch" ] || [ "${{ github.event.inputs.confirm_scopes }}" = "true" ]; then
-            INSTALL_ARGS="${INSTALL_ARGS} --confirm-scopes"
-          fi
-
-          forge install ${INSTALL_ARGS}
+        with:
+          forge-cli-version: "12"
+          working-directory: "."
+          pre-run: |
+            set -euo pipefail
+            npm ci
+            npm run build:frontend
+            npm run copy:static
+            test -d static || (echo "static/ missing after build:frontend + copy:static" && exit 1)
+          usage-analytics: "true"
+          environment: "development"
+          deploy: "true"
+          install: ${{ github.event_name != 'workflow_dispatch' && 'true' || (github.event.inputs.install == 'true' && 'true' || 'false') }}
+          site: ${{ vars.ATLASSIAN_SITE }}
+          product: "jira"
+          upgrade: "true"
+          confirm-scopes: ${{ github.event_name != 'workflow_dispatch' && 'true' || (github.event.inputs.confirm_scopes == 'true' && 'true' || 'false') }}
 
   deploy_production:
     needs: [ lint ]
@@ -192,34 +114,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Preflight Forge auth (safe)
-        shell: bash
-        env:
-          FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
-          FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
-        run: |
-          set -euo pipefail
-          echo "::add-mask::$FORGE_EMAIL"
-          echo "::add-mask::$FORGE_API_TOKEN"
-          if [ -z "${FORGE_EMAIL:-}" ]; then echo "FORGE_EMAIL missing"; exit 1; fi
-          if [ -z "${FORGE_API_TOKEN:-}" ]; then echo "FORGE_API_TOKEN missing"; exit 1; fi
-          echo "Forge auth vars present (email length: ${#FORGE_EMAIL}, token length: ${#FORGE_API_TOKEN})."
-
-      - name: Accept Forge analytics (required for CI)
-        shell: bash
-        env:
-          FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
-          FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
-        run: |
-          set -euo pipefail
-          forge settings set usage-analytics true
-
       - name: Deploy only (production)
-        shell: bash
+        uses: wjkennedy/a9-forge-gh-action@v2
         env:
           FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
           FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
-        run: |
-          set -euo pipefail
-          npm ci
-          forge deploy -e production
+        with:
+          forge-cli-version: "12"
+          working-directory: "."
+          pre-run: |
+            set -euo pipefail
+            npm ci
+            npm run build:frontend
+            npm run copy:static
+            test -d static || (echo "static/ missing after build:frontend + copy:static" && exit 1)
+          usage-analytics: "true"
+          environment: "production"
+          deploy: "true"
+          install: "false"
+          site: ${{ vars.ATLASSIAN_SITE }}
+          product: "jira"
