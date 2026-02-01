@@ -64,40 +64,48 @@ jobs:
           npm run copy:static
           test -d static || (echo "static/ missing after build:frontend + copy:static" && exit 1)
           forge lint
-
+          
   deploy_development:
-  needs: [ lint ]
-  runs-on: ubuntu-latest
-  container:
-  image: atlassian/forge-devcontainer:latest
+    needs: [ lint ]
+    runs-on: ubuntu-latest
+    container:
+      image: atlassian/forge-devcontainer:latest
       options: --user 0
-  environment: development
-  steps:
-    - uses: actions/checkout@v4
-    - name: Deploy and upgrade install (development)
-      uses: wjkennedy/a9-forge-gh-action@2
-      env:
-        FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
-        FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
-      with:
-        forge-cli-version: "latest"
-        working-directory: "."
-        pre-run: |
-          set -euo pipefail
-          npm ci
-          npm run build:frontend
-          npm run copy:static
-          echo "PWD: $(pwd)"
-          ls -la
-          ls -la static
-        usage-analytics: "true"
-        environment: "development"
-        deploy: "true"
-        install: "true"
-        site: ${{ vars.ATLASSIAN_SITE }}
-        product: "jira"
-        upgrade: "true"
-        confirm-scopes: "true"
+    environment: development
+    if: |
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/')) ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'development')
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy and install (development)
+        uses: wjkennedy/a9-forge-gh-action@2
+        env:
+          FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
+          FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
+        with:
+          forge-cli-version: "latest"
+          working-directory: "."
+          pre-run: |
+            set -euo pipefail
+            echo "PWD: $(pwd)"
+            ls -la
+            test -f manifest.yml || (echo "manifest.yml not found in working-directory" && exit 1)
+
+            npm ci
+            npm run build:frontend
+            npm run copy:static
+
+            test -d static || (echo "static/ missing after build:frontend + copy:static" && exit 1)
+            ls -la static
+          usage-analytics: "true"
+          environment: "development"
+          deploy: "true"
+          install: "true"
+          site: ${{ vars.ATLASSIAN_SITE }}
+          product: "jira"
+          upgrade: "true"
+          confirm-scopes: "true"
       
   deploy_production:
     needs: [ lint ]
@@ -122,10 +130,16 @@ jobs:
           working-directory: "."
           pre-run: |
             set -euo pipefail
+            echo "PWD: $(pwd)"
+            ls -la
+            test -f manifest.yml || (echo "manifest.yml not found in working-directory" && exit 1)
+
             npm ci
             npm run build:frontend
             npm run copy:static
+
             test -d static || (echo "static/ missing after build:frontend + copy:static" && exit 1)
+            ls -la static
           usage-analytics: "true"
           environment: "production"
           deploy: "true"
