@@ -29,29 +29,47 @@ on:
 
 jobs:
   lint:
-  runs-on: ubuntu-latest
-  container:
-    image: atlassian/forge-devcontainer:latest
-  options: --user 0
-  env:
-  FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }
-  FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
-  steps:
-    - uses: actions/checkout@v4
-    - name: Preflight auth (safe)
-      shell: bash
-      run: |
-        set -euo pipefail
-        test -n "${FORGE_EMAIL:-}" || (echo "FORGE_EMAIL missing" && exit 1)
-        test -n "${FORGE_API_TOKEN:-}" || (echo "FORGE_API_TOKEN missing" && exit 1)
+    runs-on: ubuntu-latest
+    container:
+      image: atlassian/forge-devcontainer:latest
+      options: --user 0
+    steps:
+      - uses: actions/checkout@v4
 
-    - name: Consent + lint
-      shell: bash
-      run: |
-        set -euo pipefail
-        forge settings set usage-analytics true
-        npm ci
-        forge lint
+      - name: Show runtime context
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Container OS:"
+          cat /etc/*release | sed -n '1,15p'
+          echo
+          echo "User:"
+          id -u
+          id -g
+          whoami
+          echo
+          echo "Workspace:"
+          pwd
+          ls -la
+
+      - name: Accept Forge analytics (required for CI)
+        shell: bash
+        env:
+          FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
+          FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Mask in case any downstream tooling echoes
+          echo "::add-mask::$FORGE_EMAIL"
+          echo "::add-mask::$FORGE_API_TOKEN"
+          forge settings set usage-analytics true
+
+      - name: Install deps and lint
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci
+          forge lint
 
   deploy_development:
     needs: [ lint ]
