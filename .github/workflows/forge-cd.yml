@@ -5,10 +5,11 @@ on:
     branches: [ main ]
     tags:
       - "v*"
+
   workflow_dispatch:
     inputs:
       target:
-        description: "Which environment to deploy"
+        description: "Target environment"
         required: true
         default: "development"
         type: choice
@@ -16,7 +17,12 @@ on:
           - development
           - production
       install:
-        description: "Run forge install (upgrade) after deploy (development only usually)"
+        description: "Run forge install (upgrade) after deploy (development only recommended)"
+        required: true
+        default: true
+        type: boolean
+      confirm_scopes:
+        description: "Auto-confirm new scopes during install (development only recommended)"
         required: true
         default: true
         type: boolean
@@ -26,24 +32,36 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: atlassian/forge-devcontainer:latest
-    env:
-      FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
-      FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
+      options: --user 0
     steps:
       - uses: actions/checkout@v4
 
-      - name: Sanity check auth vars exist
+      - name: Show runtime context
         shell: bash
         run: |
           set -euo pipefail
-          if [ -z "${FORGE_EMAIL:-}" ]; then echo "FORGE_EMAIL is missing"; exit 1; fi
-          if [ -z "${FORGE_API_TOKEN:-}" ]; then echo "FORGE_API_TOKEN is missing"; exit 1; fi
-          echo "Auth vars present (email length: ${#FORGE_EMAIL})."
+          echo "Container OS:"
+          cat /etc/*release | sed -n '1,15p'
+          echo
+          echo "User:"
+          id -u
+          id -g
+          whoami
+          echo
+          echo "Workspace:"
+          pwd
+          ls -la
 
       - name: Accept Forge analytics (required for CI)
         shell: bash
+        env:
+          FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
+          FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
         run: |
           set -euo pipefail
+          # Mask in case any downstream tooling echoes
+          echo "::add-mask::$FORGE_EMAIL"
+          echo "::add-mask::$FORGE_API_TOKEN"
           forge settings set usage-analytics true
 
       - name: Install deps and lint
@@ -58,24 +76,41 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: atlassian/forge-devcontainer:latest
+      options: --user 0
     environment: development
     if: |
       (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/')) ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'development')
-    env:
-      FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
-      FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
+      - name: Preflight Forge auth (safe)
+        shell: bash
+        env:
+          FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
+          FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "::add-mask::$FORGE_EMAIL"
+          echo "::add-mask::$FORGE_API_TOKEN"
+          if [ -z "${FORGE_EMAIL:-}" ]; then echo "FORGE_EMAIL missing"; exit 1; fi
+          if [ -z "${FORGE_API_TOKEN:-}" ]; then echo "FORGE_API_TOKEN missing"; exit 1; fi
+          echo "Forge auth vars present (email length: ${#FORGE_EMAIL}, token length: ${#FORGE_API_TOKEN})."
+
       - name: Accept Forge analytics (required for CI)
         shell: bash
+        env:
+          FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
+          FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
         run: |
           set -euo pipefail
           forge settings set usage-analytics true
 
-      - name: Build (if needed) + Deploy
+      - name: Deploy (development)
         shell: bash
+        env:
+          FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
+          FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
         run: |
           set -euo pipefail
           npm ci
@@ -84,38 +119,69 @@ jobs:
       - name: Install/upgrade (development)
         if: github.event_name != 'workflow_dispatch' || github.event.inputs.install == 'true'
         shell: bash
+        env:
+          FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
+          FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
         run: |
           set -euo pipefail
-          forge install --upgrade \
-            --site "${{ vars.ATLASSIAN_SITE }}" \
-            --product "${{ vars.ATLASSIAN_PRODUCT }}" \
-            --confirm-scopes \
-            --non-interactive \
-            -e development
+
+          # Product is fixed for a Marketplace app; set this once and do not parameterize
+          PRODUCT="jira"
+
+          # Prefer environment variables for site; fail fast if missing
+          if [ -z "${{ vars.ATLASSIAN_SITE }}" ]; then
+            echo "ATLASSIAN_SITE is missing in the 'development' environment variables."
+            exit 1
+          fi
+
+          INSTALL_ARGS="--upgrade --site ${{ vars.ATLASSIAN_SITE }} --product ${PRODUCT} --non-interactive -e development"
+
+          if [ "${{ github.event_name }}" != "workflow_dispatch" ] || [ "${{ github.event.inputs.confirm_scopes }}" = "true" ]; then
+            INSTALL_ARGS="${INSTALL_ARGS} --confirm-scopes"
+          fi
+
+          forge install ${INSTALL_ARGS}
 
   deploy_production:
     needs: [ lint ]
     runs-on: ubuntu-latest
     container:
       image: atlassian/forge-devcontainer:latest
+      options: --user 0
     environment: production
     if: |
       (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')) ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'production')
-    env:
-      FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
-      FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
+      - name: Preflight Forge auth (safe)
+        shell: bash
+        env:
+          FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
+          FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "::add-mask::$FORGE_EMAIL"
+          echo "::add-mask::$FORGE_API_TOKEN"
+          if [ -z "${FORGE_EMAIL:-}" ]; then echo "FORGE_EMAIL missing"; exit 1; fi
+          if [ -z "${FORGE_API_TOKEN:-}" ]; then echo "FORGE_API_TOKEN missing"; exit 1; fi
+          echo "Forge auth vars present (email length: ${#FORGE_EMAIL}, token length: ${#FORGE_API_TOKEN})."
+
       - name: Accept Forge analytics (required for CI)
         shell: bash
+        env:
+          FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
+          FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
         run: |
           set -euo pipefail
           forge settings set usage-analytics true
 
       - name: Deploy only (production)
         shell: bash
+        env:
+          FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
+          FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
         run: |
           set -euo pipefail
           npm ci
