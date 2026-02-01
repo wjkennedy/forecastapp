@@ -78,34 +78,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Deploy and install (development)
-        uses: wjkennedy/a9-forge-gh-action@2
-        env:
-          FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
-          FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
-        with:
-          forge-cli-version: "latest"
-          working-directory: "."
-          pre-run: |
-            set -euo pipefail
-            echo "PWD: $(pwd)"
-            ls -la
-            test -f manifest.yml || (echo "manifest.yml not found in working-directory" && exit 1)
+      - name: Build + deploy (development) without the action
+    shell: bash
+  env:
+     FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
+    FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
+  run: |
+      set -euo pipefail
 
-            npm ci
-            npm run build:frontend
-            npm run copy:static
+      echo "PWD: $(pwd)"
+      test -f manifest.yml || (echo "manifest.yml not found" && exit 1)
 
-            test -d static || (echo "static/ missing after build:frontend + copy:static" && exit 1)
-            ls -la static
-          usage-analytics: "true"
-          environment: "development"
-          deploy: "true"
-          install: "true"
-          site: ${{ vars.ATLASSIAN_SITE }}
-          product: "jira"
-          upgrade: "true"
-          confirm-scopes: "true"
+      forge settings set usage-analytics true
+
+      npm ci
+
+      # Prove deps exist before Forge bundles
+      node -e "require.resolve('@forge/api'); require.resolve('@forge/resolver'); require.resolve('seedrandom'); console.log('deps OK')"
+
+      npm run build:frontend
+      npm run copy:static
+      test -d static || (echo "static/ missing after copy:static" && exit 1)
+      forge deploy --non-interactive -e development
+
       
   deploy_production:
     needs: [ lint ]
