@@ -82,8 +82,8 @@ jobs:
     shell: bash
   env:
      FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
-    FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
-  run: |
+     FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
+run: |
       set -euo pipefail
 
       echo "PWD: $(pwd)"
