@@ -80,7 +80,7 @@ jobs:
         FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
         FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
       with:
-        forge-cli-version: "12"
+        forge-cli-version: "latest"
         working-directory: "."
         pre-run: |
           set -euo pipefail
@@ -118,7 +118,7 @@ jobs:
           FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
           FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
         with:
-          forge-cli-version: "12"
+          forge-cli-version: "latest"
           working-directory: "."
           pre-run: |
             set -euo pipefail
