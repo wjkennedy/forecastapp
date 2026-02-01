@@ -85,7 +85,7 @@ jobs:
           forge lint
 
       - name: Deploy and upgrade install (development)
-        uses: wjkennedy/a9-forge-ci@v1
+        uses: wjkennedy/a9-forge-ci@v2
         env:
           FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
           FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
