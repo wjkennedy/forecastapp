@@ -7,9 +7,8 @@
     "build": "npm ci && npm run build:frontend && npm run copy:static",
     "copy:static": "rm -rf static && mkdir -p static && cp -r src/frontend/build/* static/ && ls -la static/",
     "deploy": "npm run build && forge deploy --no-verify",
-    "tunnel": "forge tunnel"
-    "build:frontend": "cd src/frontend && npm ci && npm run build",
-    "copy:static": "rm -rf static && mkdir -p static && cp -r src/frontend/build/* static/",
+    "tunnel": "forge tunnel",
+    "build:frontend": "cd src/frontend && npm ci && npm run build"
 }
 
     
